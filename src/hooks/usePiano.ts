@@ -44,13 +44,36 @@ export function usePiano(options: UsePianoOptions = {}): UsePianoReturn {
 
   const pianoRef = useRef<PianoAudio | null>(null)
 
-  // Get piano instance on mount
+  // Get piano instance on mount and preload on first user interaction
   useEffect(() => {
     pianoRef.current = getPianoAudio()
     setIsInitialized(pianoRef.current.initialized)
 
+    // Preload piano on first user interaction anywhere on the page
+    const handleFirstInteraction = () => {
+      if (pianoRef.current && !pianoRef.current.initialized) {
+        setIsLoading(true)
+        pianoRef.current.initialize().then(() => {
+          setIsInitialized(true)
+          setIsLoading(false)
+        }).catch(() => {
+          setIsLoading(false)
+        })
+      }
+      // Remove listeners after first interaction
+      document.removeEventListener('click', handleFirstInteraction)
+      document.removeEventListener('touchstart', handleFirstInteraction)
+      document.removeEventListener('keydown', handleFirstInteraction)
+    }
+
+    document.addEventListener('click', handleFirstInteraction)
+    document.addEventListener('touchstart', handleFirstInteraction)
+    document.addEventListener('keydown', handleFirstInteraction)
+
     return () => {
-      // Don't dispose - it's a singleton
+      document.removeEventListener('click', handleFirstInteraction)
+      document.removeEventListener('touchstart', handleFirstInteraction)
+      document.removeEventListener('keydown', handleFirstInteraction)
     }
   }, [])
 

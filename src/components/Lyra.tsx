@@ -32,6 +32,7 @@ export function Lyra() {
     highlightKeys,
     clearHighlights,
     isInitialized: pianoInitialized,
+    isLoading: pianoLoading,
   } = usePiano()
 
   // MIDI capture for recording user playing
@@ -365,12 +366,6 @@ export function Lyra() {
               </svg>
               <p className="text-lyra-muted text-sm">Evaluating your playing...</p>
             </div>
-          )}
-          {/* Piano loading indicator */}
-          {!pianoInitialized && listeningForPiano === 'not_listening' && (
-            <p className="text-lyra-muted text-xs text-center mb-2">
-              Click a key to load piano sounds...
-            </p>
           )}
           {/* Piano keyboard - show 2 octaves on mobile, full on desktop */}
           <div className="md:hidden">
