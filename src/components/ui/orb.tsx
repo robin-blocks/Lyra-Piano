@@ -72,8 +72,10 @@ function OrbMesh({ colors, agentState, getInputVolume, getOutputVolume }: OrbMes
         attach="material"
         distort={distort}
         speed={distortSpeed}
-        roughness={0.2}
-        metalness={0.8}
+        roughness={0.4}
+        metalness={0.1}
+        emissive={colors[1]}
+        emissiveIntensity={0.15}
       />
     </Sphere>
   )
@@ -88,7 +90,7 @@ interface OrbProps {
 }
 
 export function Orb({
-  colors = ['#CADCFC', '#A0B9D1'],
+  colors = ['#DDD6FE', '#C4B5FD'],
   agentState = null,
   getInputVolume,
   getOutputVolume,
@@ -101,9 +103,10 @@ export function Orb({
         gl={{ antialias: true, alpha: true }}
         style={{ background: 'transparent', overflow: 'visible' }}
       >
-        <ambientLight intensity={0.5} />
-        <pointLight position={[10, 10, 10]} intensity={1} />
-        <pointLight position={[-10, -10, -10]} intensity={0.5} color="#A0B9D1" />
+        <ambientLight intensity={1.2} />
+        <pointLight position={[10, 10, 10]} intensity={1.5} />
+        <pointLight position={[-10, -10, -10]} intensity={0.8} color="#C4B5FD" />
+        <pointLight position={[0, 10, 5]} intensity={1} color="#E9D5FF" />
         <OrbMesh
           colors={colors}
           agentState={agentState}

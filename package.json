@@ -36,6 +36,7 @@
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.18",
     "three": "^0.182.0",
+    "tonal": "^6.4.2",
     "typescript": "^5.9.3"
   },
   "devDependencies": {

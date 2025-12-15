@@ -8,9 +8,10 @@ import { usePiano } from '@/hooks/usePiano'
 import { useMidiCapture } from '@/hooks/useMidiCapture'
 import { useMidiInput } from '@/hooks/useMidiInput'
 import { getPianoAudio } from '@/lib/PianoAudio'
-import { DemoPlayer } from '@/lib/DemoPlayer'
+import { DemoPlayer, playCustomSequence, type SequenceNote, type CustomSequenceResult } from '@/lib/DemoPlayer'
 import { getPatternById, searchPatterns, PATTERNS } from '@/lib/patterns'
 import { evaluate } from '@/lib/MidiEvaluator'
+import { Note } from 'tonal'
 
 // Environment variable for agent ID - will be set in .env.local
 const AGENT_ID = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID
@@ -53,8 +54,106 @@ export function Lyra() {
     }
   }, [pianoInitialized, highlightKeys, clearHighlights])
 
+  // Helper to play a single note with highlighting
+  const playNoteWithHighlight = async (
+    midiNote: number,
+    velocity: number = 80,
+    durationMs: number = 500
+  ): Promise<void> => {
+    const pianoAudio = getPianoAudio()
+    await pianoAudio.initialize()
+
+    highlightKeys([midiNote])
+    pianoAudio.playNote(midiNote, velocity)
+
+    await new Promise(resolve => setTimeout(resolve, durationMs))
+
+    pianoAudio.stopNote(midiNote)
+    clearHighlights()
+  }
+
   // Client tools for the ElevenLabs agent
   const clientTools = {
+    // Play a single note by name (e.g., "C4", "F#3", "Bb5")
+    playNote: async (params: { note: string; velocity?: number; duration?: number }) => {
+      console.log('Agent: Playing note:', params.note)
+
+      const midiNote = Note.midi(params.note)
+      if (midiNote === null) {
+        return JSON.stringify({
+          error: 'INVALID_NOTE',
+          message: `Note '${params.note}' is not valid. Use format like C4, F#3, Bb5.`
+        })
+      }
+
+      const velocity = params.velocity ?? 80
+      const duration = params.duration ?? 500
+
+      await playNoteWithHighlight(midiNote, velocity, duration)
+
+      return JSON.stringify({
+        played: params.note,
+        midiNote: midiNote
+      })
+    },
+
+    // Play a sequence of notes (melody or chord)
+    playSequence: async (params: {
+      notes: Array<string | { note: string; duration?: number }>;
+      asChord?: boolean;
+      duration?: number;
+    }) => {
+      console.log('Agent: Playing sequence:', params)
+
+      // Convert note names to MIDI numbers
+      const sequenceNotes: SequenceNote[] = []
+      const noteNames: string[] = []
+
+      for (const item of params.notes) {
+        const noteName = typeof item === 'string' ? item : item.note
+        const duration = typeof item === 'string' ? undefined : item.duration
+
+        const midiNote = Note.midi(noteName)
+        if (midiNote === null) {
+          return JSON.stringify({
+            error: 'INVALID_NOTE',
+            message: `Note '${noteName}' is not valid. Use format like C4, F#3, Bb5.`
+          })
+        }
+
+        sequenceNotes.push({
+          midiNote,
+          duration,
+        })
+        noteNames.push(noteName)
+      }
+
+      const pianoAudio = getPianoAudio()
+      await pianoAudio.initialize()
+
+      const result = await playCustomSequence(
+        sequenceNotes,
+        pianoAudio,
+        {
+          onKeyHighlight: (note) => highlightKeys([note]),
+          onKeysHighlight: (notes) => highlightKeys(notes),
+          onKeyUnhighlight: () => clearHighlights(),
+        },
+        {
+          asChord: params.asChord,
+          duration: params.duration,
+        }
+      )
+
+      return JSON.stringify({
+        notesPlayed: result.notesPlayed,
+        durationMs: result.durationMs,
+        notes: noteNames,
+        midiNotes: result.midiNotes,
+        type: result.type,
+      })
+    },
+
     // Start listening for user piano input
     startListeningToUser: async () => {
       console.log('Agent: Starting to listen for user piano input')
@@ -301,10 +400,7 @@ export function Lyra() {
   return (
     <div className="flex-1 flex flex-col items-center justify-between py-8 px-4">
       {/* Header */}
-      <header className="w-full max-w-4xl flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-lyra-orb-1 font-bold text-xl">Lyra</span>
-        </div>
+      <header className="w-full max-w-4xl flex items-center justify-start">
         <nav>
           <button className="p-2 hover:bg-lyra-surface rounded-lg transition-colors">
             <svg

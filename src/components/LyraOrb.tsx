@@ -57,7 +57,7 @@ export function LyraOrb({
           className="absolute inset-0 -z-10 rounded-full"
           style={{
             filter: 'blur(40px)',
-            background: 'linear-gradient(90deg, #0fffc1, #7e0fff, #CADCFC, #0fffc1)',
+            background: 'linear-gradient(90deg, #C4B5FD, #A78BFA, #DDD6FE, #C4B5FD)',
             backgroundSize: '300% 300%',
             animation: 'animateGlow 24s ease-in-out infinite',
           }}
@@ -99,7 +99,7 @@ export function LyraOrb({
               agentState={agentState}
               getInputVolume={getInputVolume}
               getOutputVolume={getOutputVolume}
-              colors={['#CADCFC', '#A0B9D1']}
+              colors={['#DDD6FE', '#C4B5FD']}
             />
           </div>
         )}

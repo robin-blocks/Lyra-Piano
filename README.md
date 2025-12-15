@@ -8,7 +8,10 @@ Lyra is a voice-driven AI piano teacher built for the **Google Cloud AI Partner 
 
 - **Voice-First Interaction**: Speak naturally with Lyra - no typing required
 - **Real Piano Sound**: High-quality piano synthesis via SplendidGrandPiano
-- **Visual Feedback**: Animated Orb shows agent state (listening/talking)
+- **Interactive Piano Keyboard**: Click or use hardware MIDI controllers to play
+- **Hardware MIDI Support**: Connect your MIDI keyboard for a real playing experience
+- **Visual Feedback**: Animated purple orb shows agent state (listening/talking)
+- **Agent Piano Control**: Lyra can play notes and chords to demonstrate concepts
 - **Beginner-Friendly**: Learn piano without reading sheet music
 
 ## Tech Stack
@@ -16,6 +19,7 @@ Lyra is a voice-driven AI piano teacher built for the **Google Cloud AI Partner 
 - **Frontend**: Next.js 16, React 19, Tailwind CSS v4
 - **AI Voice**: ElevenLabs Agents Platform + Google Gemini
 - **Audio**: smplr (SplendidGrandPiano)
+- **Music Theory**: Tonal.js
 - **3D Graphics**: Three.js, React Three Fiber
 
 ## Quick Start
@@ -60,16 +64,50 @@ npm start
 
 1. Go to [ElevenLabs Dashboard](https://elevenlabs.io/app/agents)
 2. Create a new agent or select existing
-3. In **Agent Settings → LLM**, select **Google Gemini** (gemini-2.5-flash recommended)
-4. Configure the system prompt for a friendly piano teacher personality
-5. Copy the Agent ID to your `.env.local` file
+3. In **Agent Settings > LLM**, select **Google Gemini** (gemini-2.5-flash recommended)
+4. Configure the system prompt (see below)
+5. Add the client tools (see below)
+6. Copy the Agent ID to your `.env.local` file
+
+### Client Tools Configuration
+
+Add these tools in your ElevenLabs agent dashboard:
+
+#### Tool: `playNote`
+- **Type**: Client
+- **Description**: Play a single note on the piano. Use this to demonstrate specific notes to the user, like "This is middle C" or "Here's F sharp". Always use this tool when showing individual notes rather than just describing them.
+- **Wait for response**: Yes
+- **Parameters**:
+  - `note` (string, required): The note to play in scientific pitch notation (e.g., "C4" for middle C, "F#3", "Bb5")
+  - `velocity` (number, optional): How hard to play (0-127, default 80)
+  - `duration` (number, optional): How long to hold in milliseconds (default 500)
+
+#### Tool: `playSequence`
+- **Type**: Client
+- **Description**: Play a sequence of notes as a melody or chord. Use this to demonstrate chords (set asChord to true), arpeggios, scales, or melodic phrases. Always play music rather than just describing it.
+- **Wait for response**: Yes
+- **Parameters**:
+  - `notes` (array, required): Array of notes like ["C4", "E4", "G4"] or objects with duration
+  - `asChord` (boolean, optional): If true, play all notes simultaneously as a chord
+  - `duration` (number, optional): Duration in milliseconds
 
 ### Recommended System Prompt
 
 ```
-You are Lyra, a friendly and patient AI piano teacher. You help beginners learn piano through natural conversation. You:
+You are Lyra, a friendly and patient AI piano teacher. You help beginners learn piano through natural conversation.
+
+You have access to piano tools. ALWAYS use these tools to demonstrate music rather than just describing it:
+
+- playNote: Play a single note. Use for showing specific keys like "This is middle C" -> call playNote with note "C4"
+- playSequence: Play multiple notes. For chords, set asChord: true. Examples:
+  - C major chord: playSequence with notes ["C4", "E4", "G4"], asChord: true
+  - C major scale: playSequence with notes ["C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5"]
+
+When a user asks about a note, chord, or musical concept - DEMONSTRATE it on the piano, don't just explain it verbally.
+
+You:
 - Explain musical concepts in simple, approachable terms
-- Demonstrate scales and chords by name
+- Demonstrate scales and chords by playing them
 - Give encouraging feedback when students play
 - Never use technical jargon without explaining it first
 - Keep lessons fun and achievable
@@ -79,31 +117,24 @@ When teaching, start with the basics like finding Middle C, then progress to sim
 
 ## Deployment
 
-### Firebase Hosting (Recommended)
-
-```bash
-# Install Firebase CLI
-npm install -g firebase-tools
-
-# Login to Firebase
-firebase login
-
-# Initialize hosting
-firebase init hosting
-
-# Build and deploy
-npm run build
-firebase deploy
-```
-
 ### Google Cloud Run
 
 ```bash
-# Build container
-gcloud builds submit --tag gcr.io/YOUR_PROJECT/lyra
+# Build and deploy
+gcloud run deploy lyra \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated
+```
 
-# Deploy
-gcloud run deploy lyra --image gcr.io/YOUR_PROJECT/lyra --platform managed
+### Firebase Hosting
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase init hosting
+npm run build
+firebase deploy
 ```
 
 ## Project Structure
@@ -113,12 +144,18 @@ lyra/
 ├── src/
 │   ├── app/              # Next.js App Router
 │   ├── components/       # React components
-│   │   ├── Lyra.tsx      # Main container
-│   │   ├── LyraOrb.tsx   # Orb with connect button
-│   │   ├── Piano/        # Piano keyboard (Phase 2)
-│   │   └── ui/           # UI primitives
+│   │   ├── Lyra.tsx      # Main container with client tools
+│   │   ├── LyraOrb.tsx   # Animated orb with connect button
+│   │   ├── Piano/        # Piano keyboard component
+│   │   └── ui/           # UI primitives (orb 3D)
 │   ├── hooks/            # Custom React hooks
+│   │   ├── usePiano.ts   # Piano state management
+│   │   ├── useMidiInput.ts   # Hardware MIDI support
+│   │   └── useMidiCapture.ts # MIDI recording
 │   └── lib/              # Utilities and audio
+│       ├── PianoAudio.ts # Audio engine wrapper
+│       ├── DemoPlayer.ts # Pattern/sequence playback
+│       └── patterns.ts   # Musical patterns library
 ├── public/               # Static assets
 └── package.json
 ```
@@ -126,21 +163,22 @@ lyra/
 ## Roadmap
 
 - [x] Phase 1: Voice Agent MVP with Orb UI
-- [ ] Phase 2: Piano Keyboard + Audio
-- [ ] Phase 3: MIDI Capture + Phrase Grouping
-- [ ] Phase 4: Evaluation Tools (Client Tools)
-- [ ] Phase 5: Full Lesson Loop
+- [x] Phase 2: Piano Keyboard + Audio
+- [x] Phase 3: MIDI Capture + Hardware Input
+- [x] Phase 4: Agent Tools (playNote, playSequence)
+- [ ] Phase 5: User Playing Analysis & Feedback
+- [ ] Phase 6: Full Lesson Loop with Evaluation
 
 ## Hackathon Submission
 
 This project is submitted to the **ElevenLabs Challenge** of the Google Cloud AI Partner Catalyst Hackathon.
 
 **Requirements Met:**
-- ✅ ElevenLabs Agents Platform integration
-- ✅ Google Cloud Gemini as LLM
-- ✅ Voice-first, conversational UX
-- ✅ MIT License (OSI-approved)
-- ✅ Hosted on Google Cloud
+- ElevenLabs Agents Platform integration
+- Google Cloud Gemini as LLM
+- Voice-first, conversational UX
+- MIT License (OSI-approved)
+- Hosted on Google Cloud
 
 ## License
 
@@ -151,4 +189,5 @@ This project is submitted to the **ElevenLabs Challenge** of the Google Cloud AI
 - [ElevenLabs](https://elevenlabs.io) for the Conversational AI platform
 - [Google Cloud](https://cloud.google.com) for Gemini and hosting
 - [smplr](https://github.com/danigb/smplr) for the SplendidGrandPiano sampler
+- [Tonal](https://github.com/tonaljs/tonal) for music theory utilities
 - [JamieOnKeys](https://www.jamieonkeys.dev) for piano keyboard inspiration

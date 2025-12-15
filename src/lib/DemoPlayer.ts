@@ -9,6 +9,8 @@ import { PianoAudio } from './PianoAudio'
 export interface DemoCallbacks {
   /** Called when a key should be visually highlighted */
   onKeyHighlight?: (midiNote: number) => void
+  /** Called when multiple keys should be highlighted (for chords) */
+  onKeysHighlight?: (midiNotes: number[]) => void
   /** Called when a key highlight should be removed */
   onKeyUnhighlight?: (midiNote: number) => void
   /** Called when demo starts */
@@ -241,6 +243,115 @@ export class DemoPlayer {
       durationMs,
       this.options.velocity
     )
+  }
+}
+
+/**
+ * Custom sequence types for agent-generated content
+ */
+export interface SequenceNote {
+  midiNote: number
+  duration?: number  // ms, defaults to 400
+  velocity?: number  // 0-127, defaults to 80
+}
+
+export interface CustomSequenceOptions {
+  /** Play all notes simultaneously as a chord */
+  asChord?: boolean
+  /** Default duration for chord or notes without duration (ms) */
+  duration?: number
+  /** Default velocity (0-127) */
+  velocity?: number
+}
+
+export interface CustomSequenceResult {
+  notesPlayed: number
+  durationMs: number
+  midiNotes: number[]
+  type: 'chord' | 'melody'
+}
+
+/**
+ * Play a custom sequence of notes (for agent-generated content)
+ * Supports both melodies (sequential) and chords (simultaneous)
+ */
+export async function playCustomSequence(
+  notes: SequenceNote[],
+  pianoAudio: PianoAudio,
+  callbacks: DemoCallbacks = {},
+  options: CustomSequenceOptions = {}
+): Promise<CustomSequenceResult> {
+  const {
+    asChord = false,
+    duration: defaultDuration = 400,
+    velocity: defaultVelocity = 80
+  } = options
+
+  const midiNotes = notes.map(n => n.midiNote)
+
+  callbacks.onStart?.()
+
+  let totalDuration = 0
+
+  if (asChord) {
+    // Play all notes simultaneously
+    const chordDuration = options.duration ?? 800
+
+    // Highlight all keys at once (use batch callback if available)
+    if (callbacks.onKeysHighlight) {
+      callbacks.onKeysHighlight(midiNotes)
+    } else {
+      midiNotes.forEach(note => callbacks.onKeyHighlight?.(note))
+    }
+
+    // Play all notes
+    notes.forEach(n => {
+      pianoAudio.playNote(n.midiNote, n.velocity ?? defaultVelocity)
+    })
+
+    // Hold chord
+    await sleep(chordDuration)
+
+    // Stop all notes and clear highlights
+    midiNotes.forEach(note => {
+      pianoAudio.stopNote(note)
+    })
+    callbacks.onKeyUnhighlight?.(0) // Signal to clear all
+
+    totalDuration = chordDuration
+  } else {
+    // Play notes sequentially as melody
+    for (const note of notes) {
+      const noteDuration = note.duration ?? defaultDuration
+      const noteVelocity = note.velocity ?? defaultVelocity
+
+      // Highlight
+      callbacks.onKeyHighlight?.(note.midiNote)
+
+      // Play
+      pianoAudio.playNote(note.midiNote, noteVelocity)
+
+      // Wait for 80% of duration (note sounds)
+      await sleep(noteDuration * 0.8)
+
+      // Stop note
+      pianoAudio.stopNote(note.midiNote)
+      callbacks.onKeyUnhighlight?.(note.midiNote)
+
+      // Wait for remaining 20% (gap between notes)
+      await sleep(noteDuration * 0.2)
+
+      totalDuration += noteDuration
+    }
+  }
+
+  callbacks.onEnd?.()
+
+  return {
+    notesPlayed: notes.length,
+    durationMs: totalDuration,
+    midiNotes,
+    type: asChord ? 'chord' : 'melody'
   }
 }
 

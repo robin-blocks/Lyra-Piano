@@ -18,8 +18,37 @@ export class PianoAudio {
    * Must be called after a user interaction (click/touch) due to browser autoplay policies
    */
   async initialize(): Promise<void> {
-    if (this.isInitialized) return
-    if (this.loadPromise) return this.loadPromise
+    // If already fully initialized and context is running, we're good
+    if (this.isInitialized && this.audioContext?.state === 'running') {
+      return
+    }
+
+    // If context exists but is suspended, try to resume it
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      try {
+        await this.audioContext.resume()
+        // Re-check state after resume (TypeScript needs this pattern)
+        const ctx = this.audioContext
+        if (ctx.state === 'running' && this.piano) {
+          this.isInitialized = true
+          this.isLoading = false
+          return
+        }
+      } catch (e) {
+        // Resume failed, will need to recreate
+        console.log('Failed to resume AudioContext, recreating...')
+      }
+    }
+
+    // If currently loading, wait for it
+    if (this.isLoading && this.loadPromise) {
+      await this.loadPromise
+      // After loading, try to resume if suspended
+      if (this.audioContext?.state === 'suspended') {
+        await this.audioContext.resume()
+      }
+      return
+    }
 
     this.isLoading = true
     this.loadPromise = this._doInitialize()
@@ -92,8 +121,12 @@ export class PianoAudio {
       return
     }
 
-    // Resume context if needed
-    this.resume()
+    // Resume context if needed (async but don't wait)
+    if (this.audioContext?.state === 'suspended') {
+      this.audioContext.resume().catch(() => {
+        console.warn('Could not resume AudioContext - needs user gesture')
+      })
+    }
 
     // Remove from sustained notes if replaying
     this.sustainedNotes.delete(midiNote)
