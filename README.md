@@ -60,7 +60,7 @@ npm start
 
 1. Go to [ElevenLabs Dashboard](https://elevenlabs.io/app/agents)
 2. Create a new agent or select existing
-3. In **Agent Settings → LLM**, select **Google Gemini** (gemini-2.0-flash recommended)
+3. In **Agent Settings → LLM**, select **Google Gemini** (gemini-2.5-flash recommended)
 4. Configure the system prompt for a friendly piano teacher personality
 5. Copy the Agent ID to your `.env.local` file
 
