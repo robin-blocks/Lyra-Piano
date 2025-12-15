@@ -1,0 +1,93 @@
+/* Import Nunito font from Google Fonts - must be at top */
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700&display=swap');
+
+@import "tailwindcss";
+
+/* Tailwind v4 theme configuration */
+@theme {
+  /* Cyber-Cozy dark theme colors */
+  --color-lyra-bg: #0f0f1a;
+  --color-lyra-surface: #1a1a2e;
+  --color-lyra-accent: #4a4a6a;
+  --color-lyra-text: #e0e0e8;
+  --color-lyra-muted: #8888a0;
+  --color-lyra-orb-1: #CADCFC;
+  --color-lyra-orb-2: #A0B9D1;
+
+  /* Fonts */
+  --font-family-sans: 'Nunito', system-ui, sans-serif;
+
+  /* Animations */
+  --animate-pulse-slow: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-glow: glow 2s ease-in-out infinite alternate;
+
+  @keyframes pulse-slow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  @keyframes glow {
+    0% { box-shadow: 0 0 20px rgba(202, 220, 252, 0.3); }
+    100% { box-shadow: 0 0 40px rgba(202, 220, 252, 0.6); }
+  }
+
+  @keyframes gradient-shift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  @keyframes animateGlow {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+}
+
+/* Base styles */
+html {
+  font-family: var(--font-family-sans);
+}
+
+body {
+  background-color: var(--color-lyra-bg);
+  color: var(--color-lyra-text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Selection styling */
+::selection {
+  background-color: var(--color-lyra-orb-1);
+  color: var(--color-lyra-bg);
+}
+
+/* Focus styles for accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-lyra-orb-1);
+  outline-offset: 2px;
+}
+
+/* Animated glow keyframes - must be outside @theme for animation to work */
+@keyframes animateGlow {
+  0% {
+    background-position: 0% 50%;
+    transform: scale(1.3);
+    opacity: 0.4;
+  }
+  50% {
+    background-position: 100% 50%;
+    transform: scale(1.5);
+    opacity: 0.6;
+  }
+  100% {
+    background-position: 0% 50%;
+    transform: scale(1.3);
+    opacity: 0.4;
+  }
+}
