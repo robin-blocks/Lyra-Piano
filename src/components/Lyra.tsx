@@ -6,6 +6,7 @@ import { LyraOrb } from '@/components/LyraOrb'
 import { PianoKeyboard } from '@/components/Piano'
 import { usePiano } from '@/hooks/usePiano'
 import { useMidiCapture } from '@/hooks/useMidiCapture'
+import { useMidiInput } from '@/hooks/useMidiInput'
 import { getPianoAudio } from '@/lib/PianoAudio'
 import { DemoPlayer } from '@/lib/DemoPlayer'
 import { getPatternById, searchPatterns, PATTERNS } from '@/lib/patterns'
@@ -280,6 +281,23 @@ export function Lyra() {
     // In a real scenario, you might send a signal to the agent here
   }, [])
 
+  // Handle sustain pedal
+  const handleSustain = useCallback((active: boolean) => {
+    const pianoAudio = getPianoAudio()
+    pianoAudio.setSustain(active)
+  }, [])
+
+  // Hardware MIDI input
+  const {
+    connectedDevice: midiDevice,
+    isSupported: midiSupported,
+  } = useMidiInput({
+    onNoteOn: handleNoteOn,
+    onNoteOff: handleNoteOff,
+    onSustain: handleSustain,
+    autoConnect: true,
+  })
+
   return (
     <div className="flex-1 flex flex-col items-center justify-between py-8 px-4">
       {/* Header */}
@@ -340,6 +358,13 @@ export function Lyra() {
       {/* Piano Keyboard */}
       <footer className="w-full">
         <div className="bg-lyra-surface/50 rounded-t-xl border-t border-lyra-accent/20 p-2 md:p-4">
+          {/* MIDI device indicator */}
+          {midiDevice && (
+            <div className="flex items-center justify-center gap-1 mb-2">
+              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+              <span className="text-xs text-lyra-muted">Connected to: {midiDevice.name}</span>
+            </div>
+          )}
           {/* Listening for piano indicator */}
           {listeningForPiano === 'listening_for_piano' && (
             <div className="flex items-center justify-center gap-2 mb-2">
