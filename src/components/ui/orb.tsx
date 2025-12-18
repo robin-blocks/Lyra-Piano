@@ -2,13 +2,13 @@
 
 import { useRef, useMemo } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { Sphere, MeshDistortMaterial } from '@react-three/drei'
+import { Sphere, MeshDistortMaterial, GradientTexture } from '@react-three/drei'
 import * as THREE from 'three'
 
 type AgentState = 'idle' | 'listening' | 'talking' | null
 
 interface OrbMeshProps {
-  colors: [string, string]
+  colors: [string, string, string]
   agentState: AgentState
   getInputVolume?: () => number
   getOutputVolume?: () => number
@@ -68,21 +68,22 @@ function OrbMesh({ colors, agentState, getInputVolume, getOutputVolume }: OrbMes
   return (
     <Sphere ref={meshRef} args={[1, 64, 64]}>
       <MeshDistortMaterial
-        color={colors[0]}
         attach="material"
         distort={distort}
         speed={distortSpeed}
-        roughness={0.4}
-        metalness={0.1}
+        roughness={0.25}
+        metalness={0.2}
         emissive={colors[1]}
         emissiveIntensity={0.15}
-      />
+      >
+        <GradientTexture stops={[0, 1]} colors={[colors[0], colors[1]]} size={1024} />
+      </MeshDistortMaterial>
     </Sphere>
   )
 }
 
 interface OrbProps {
-  colors?: [string, string]
+  colors?: [string, string, string]
   agentState?: AgentState
   getInputVolume?: () => number
   getOutputVolume?: () => number
@@ -90,7 +91,7 @@ interface OrbProps {
 }
 
 export function Orb({
-  colors = ['#DDD6FE', '#C4B5FD'],
+  colors = ['#DDD6FE', '#C4B5FD', '#F5F3FF'],
   agentState = null,
   getInputVolume,
   getOutputVolume,
@@ -103,10 +104,10 @@ export function Orb({
         gl={{ antialias: true, alpha: true }}
         style={{ background: 'transparent', overflow: 'visible' }}
       >
-        <ambientLight intensity={1.2} />
+        <ambientLight intensity={0.5} />
         <pointLight position={[10, 10, 10]} intensity={1.5} />
         <pointLight position={[-10, -10, -10]} intensity={0.8} color="#C4B5FD" />
-        <pointLight position={[0, 10, 5]} intensity={1} color="#E9D5FF" />
+        <pointLight position={[-3, 5, 5]} intensity={5} color={colors[2]} />
         <OrbMesh
           colors={colors}
           agentState={agentState}

@@ -99,7 +99,7 @@ export function LyraOrb({
               agentState={agentState}
               getInputVolume={getInputVolume}
               getOutputVolume={getOutputVolume}
-              colors={['#DDD6FE', '#C4B5FD']}
+              colors={['#DDD6FE', '#C4B5FD', '#F5F3FF']}
             />
           </div>
         )}
