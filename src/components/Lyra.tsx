@@ -400,7 +400,7 @@ export function Lyra() {
   return (
     <div className="flex-1 flex flex-col items-center justify-between py-8 px-4">
       {/* Header */}
-      <header className="w-full max-w-4xl flex items-center justify-start">
+      <header className="w-full max-w-[496px] md:max-w-[1184px] flex items-center justify-start">
         <nav>
           <button className="p-2 hover:bg-lyra-surface rounded-lg transition-colors">
             <svg
@@ -452,7 +452,7 @@ export function Lyra() {
       </main>
 
       {/* Piano Keyboard */}
-      <footer className="w-full">
+      <footer className="w-full max-w-[496px] md:max-w-[1184px]">
         <div className="bg-lyra-surface/50 rounded-t-xl border-t border-lyra-accent/20 p-2 md:p-4">
           {/* MIDI device indicator */}
           {midiDevice && (
