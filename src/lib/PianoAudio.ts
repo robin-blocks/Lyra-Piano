@@ -65,15 +65,27 @@ export class PianoAudio {
         await this.audioContext.resume()
       }
 
-      // Create piano sampler
-      this.piano = new SplendidGrandPiano(this.audioContext)
+      // Generate array of common notes to preload (C3 to C6 = MIDI 48 to 84)
+      // This covers the most commonly used piano range for teaching
+      const notesToPreload: number[] = []
+      for (let note = 48; note <= 84; note++) {
+        notesToPreload.push(note)
+      }
+
+      // Create piano sampler with preloaded notes for all velocity layers
+      this.piano = new SplendidGrandPiano(this.audioContext, {
+        notesToLoad: {
+          notes: notesToPreload,
+          velocityRange: [1, 127], // All velocity layers
+        },
+      })
 
       // Wait for samples to load
       await this.piano.load
 
       this.isInitialized = true
       this.isLoading = false
-      console.log('PianoAudio initialized successfully')
+      console.log('PianoAudio initialized successfully with preloaded samples')
     } catch (error) {
       this.isLoading = false
       console.error('Failed to initialize PianoAudio:', error)
@@ -87,6 +99,19 @@ export class PianoAudio {
   resume(): void {
     if (this.audioContext?.state === 'suspended') {
       this.audioContext.resume()
+    }
+  }
+
+  /**
+   * Ensure piano is ready to play (call before playing multiple notes)
+   */
+  async ensureReady(): Promise<void> {
+    if (!this.isInitialized || this.isLoading) {
+      await this.initialize()
+    }
+    // Resume context if needed
+    if (this.audioContext?.state === 'suspended') {
+      await this.audioContext.resume()
     }
   }
 

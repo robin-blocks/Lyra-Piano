@@ -1,26 +1,32 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
-import { useConversation } from '@elevenlabs/react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { LyraOrb } from '@/components/LyraOrb'
 import { PianoKeyboard } from '@/components/Piano'
 import { usePiano } from '@/hooks/usePiano'
 import { useMidiCapture } from '@/hooks/useMidiCapture'
 import { useMidiInput } from '@/hooks/useMidiInput'
+import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
 import { getPianoAudio } from '@/lib/PianoAudio'
-import { DemoPlayer, playCustomSequence, type SequenceNote, type CustomSequenceResult } from '@/lib/DemoPlayer'
+import { DemoPlayer, playCustomSequence, type SequenceNote } from '@/lib/DemoPlayer'
 import { getPatternById, searchPatterns, PATTERNS } from '@/lib/patterns'
 import { evaluate } from '@/lib/MidiEvaluator'
 import { Note } from 'tonal'
+import type { ToolHandler, ConnectionStatus } from '@/types/elevenlabs-websocket'
 
 // Environment variable for agent ID - will be set in .env.local
-const AGENT_ID = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID
+const AGENT_ID = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID || ''
 
-type AgentState = 'idle' | 'listening' | 'talking' | null
 type ListeningState = 'not_listening' | 'listening_for_piano' | 'processing'
 
+// Map WebSocket agent state to orb state
+type OrbAgentState = 'idle' | 'listening' | 'talking' | null
+function mapAgentState(wsState: 'idle' | 'listening' | 'speaking' | null): OrbAgentState {
+  if (wsState === 'speaking') return 'talking'
+  return wsState
+}
+
 export function Lyra() {
-  const [agentState, setAgentState] = useState<AgentState>(null)
   const [message, setMessage] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [listeningForPiano, setListeningForPiano] = useState<ListeningState>('not_listening')
@@ -72,46 +78,46 @@ export function Lyra() {
     clearHighlights()
   }
 
-  // Client tools for the ElevenLabs agent
-  const clientTools = {
+  // Tool handlers for the WebSocket agent
+  // Memoized to maintain stable reference for the hook
+  const toolHandlers = useMemo<Record<string, ToolHandler>>(() => ({
     // Play a single note by name (e.g., "C4", "F#3", "Bb5")
-    playNote: async (params: { note: string; velocity?: number; duration?: number }) => {
-      console.log('Agent: Playing note:', params.note)
+    playNote: async (params) => {
+      const { note, velocity = 80, duration = 500 } = params as { note: string; velocity?: number; duration?: number }
+      console.log('Agent: Playing note:', note)
 
-      const midiNote = Note.midi(params.note)
+      const midiNote = Note.midi(note)
       if (midiNote === null) {
         return JSON.stringify({
           error: 'INVALID_NOTE',
-          message: `Note '${params.note}' is not valid. Use format like C4, F#3, Bb5.`
+          message: `Note '${note}' is not valid. Use format like C4, F#3, Bb5.`
         })
       }
-
-      const velocity = params.velocity ?? 80
-      const duration = params.duration ?? 500
 
       await playNoteWithHighlight(midiNote, velocity, duration)
 
       return JSON.stringify({
-        played: params.note,
+        played: note,
         midiNote: midiNote
       })
     },
 
     // Play a sequence of notes (melody or chord)
-    playSequence: async (params: {
-      notes: Array<string | { note: string; duration?: number }>;
-      asChord?: boolean;
-      duration?: number;
-    }) => {
+    playSequence: async (params) => {
+      const { notes, asChord, duration } = params as {
+        notes: Array<string | { note: string; duration?: number }>;
+        asChord?: boolean;
+        duration?: number;
+      }
       console.log('Agent: Playing sequence:', params)
 
       // Convert note names to MIDI numbers
       const sequenceNotes: SequenceNote[] = []
       const noteNames: string[] = []
 
-      for (const item of params.notes) {
+      for (const item of notes) {
         const noteName = typeof item === 'string' ? item : item.note
-        const duration = typeof item === 'string' ? undefined : item.duration
+        const itemDuration = typeof item === 'string' ? undefined : item.duration
 
         const midiNote = Note.midi(noteName)
         if (midiNote === null) {
@@ -123,7 +129,7 @@ export function Lyra() {
 
         sequenceNotes.push({
           midiNote,
-          duration,
+          duration: itemDuration,
         })
         noteNames.push(noteName)
       }
@@ -140,8 +146,8 @@ export function Lyra() {
           onKeyUnhighlight: () => clearHighlights(),
         },
         {
-          asChord: params.asChord,
-          duration: params.duration,
+          asChord,
+          duration,
         }
       )
 
@@ -163,8 +169,9 @@ export function Lyra() {
     },
 
     // Stop listening and evaluate the user's playing
-    evaluateUserPlaying: async (params: { patternId: string }) => {
-      console.log('Agent: Evaluating user playing for pattern:', params.patternId)
+    evaluateUserPlaying: async (params) => {
+      const { patternId } = params as { patternId: string }
+      console.log('Agent: Evaluating user playing for pattern:', patternId)
       setListeningForPiano('processing')
 
       const phrase = midiCapture.endCapture()
@@ -176,7 +183,7 @@ export function Lyra() {
         })
       }
 
-      const pattern = getPatternById(params.patternId)
+      const pattern = getPatternById(patternId)
       if (!pattern) {
         setListeningForPiano('not_listening')
         return JSON.stringify({
@@ -192,10 +199,11 @@ export function Lyra() {
     },
 
     // Demonstrate a pattern on the piano
-    demonstratePattern: async (params: { patternId: string }) => {
-      console.log('Agent: Demonstrating pattern:', params.patternId)
+    demonstratePattern: async (params) => {
+      const { patternId } = params as { patternId: string }
+      console.log('Agent: Demonstrating pattern:', patternId)
 
-      const pattern = getPatternById(params.patternId)
+      const pattern = getPatternById(patternId)
       if (!pattern) {
         return 'Pattern not found'
       }
@@ -215,9 +223,10 @@ export function Lyra() {
     },
 
     // Highlight specific keys on the piano
-    highlightKeys: async (params: { midiNotes: number[] }) => {
-      console.log('Agent: Highlighting keys:', params.midiNotes)
-      highlightKeys(params.midiNotes)
+    highlightKeys: async (params) => {
+      const { midiNotes } = params as { midiNotes: number[] }
+      console.log('Agent: Highlighting keys:', midiNotes)
+      highlightKeys(midiNotes)
       return 'Keys highlighted'
     },
 
@@ -229,22 +238,23 @@ export function Lyra() {
     },
 
     // Get available patterns
-    getAvailablePatterns: async (params: { type?: string; difficulty?: number; search?: string }) => {
+    getAvailablePatterns: async (params) => {
+      const { type, difficulty, search } = params as { type?: string; difficulty?: number; search?: string }
       console.log('Agent: Getting available patterns', params)
 
       let patterns = Object.values(PATTERNS)
 
-      if (params.type) {
-        patterns = patterns.filter(p => p.type === params.type)
+      if (type) {
+        patterns = patterns.filter(p => p.type === type)
       }
 
-      if (params.difficulty !== undefined) {
-        const maxDifficulty = params.difficulty
+      if (difficulty !== undefined) {
+        const maxDifficulty = difficulty
         patterns = patterns.filter(p => p.difficulty <= maxDifficulty)
       }
 
-      if (params.search) {
-        patterns = searchPatterns(params.search)
+      if (search) {
+        patterns = searchPatterns(search)
       }
 
       // Return simplified list
@@ -260,8 +270,9 @@ export function Lyra() {
     },
 
     // Get pattern details
-    getPatternDetails: async (params: { patternId: string }) => {
-      const pattern = getPatternById(params.patternId)
+    getPatternDetails: async (params) => {
+      const { patternId } = params as { patternId: string }
+      const pattern = getPatternById(patternId)
       if (!pattern) {
         return JSON.stringify({ error: 'Pattern not found' })
       }
@@ -274,41 +285,33 @@ export function Lyra() {
         noteCount: pattern.notes.length,
       })
     },
-  }
+  }), [highlightKeys, clearHighlights, midiCapture, playNoteWithHighlight])
 
-  const conversation = useConversation({
-    clientTools,
-    onConnect: () => {
-      console.log('Connected to Lyra')
-      setMessage("Hello! I'm ready to play.")
-      setAgentState('idle')
+  // Use the custom WebSocket hook for interleaved audio/tool processing
+  const {
+    connect,
+    disconnect,
+    status,
+    agentState: wsAgentState,
+    getInputVolume,
+    getOutputVolume,
+  } = useAgentWebSocket({
+    agentId: AGENT_ID,
+    toolHandlers,
+    onUserTranscript: (transcript) => {
+      console.log('User transcript:', transcript)
     },
-    onDisconnect: () => {
-      console.log('Disconnected from Lyra')
-      setAgentState(null)
-      setMessage('')
-      setListeningForPiano('not_listening')
-      midiCapture.clearCapture()
+    onAgentResponse: (response) => {
+      console.log('Agent response:', response)
     },
-    onMessage: (messagePayload) => {
-      console.log('Message received:', messagePayload)
-      // Messages contain transcript data - could be used for display
-    },
-    onModeChange: (mode) => {
-      console.log('Mode changed:', mode)
-      if (mode.mode === 'speaking') {
-        setAgentState('talking')
-      } else if (mode.mode === 'listening') {
-        setAgentState('listening')
-      } else {
-        setAgentState('idle')
-      }
-    },
-    onError: (error) => {
-      console.error('Conversation error:', error)
+    onError: (err) => {
+      console.error('WebSocket error:', err)
       setError('Connection error. Please try again.')
     },
   })
+
+  // Map WebSocket agent state to orb-compatible state
+  const agentState = mapAgentState(wsAgentState)
 
   // Clear error after 5 seconds
   useEffect(() => {
@@ -326,32 +329,20 @@ export function Lyra() {
 
     try {
       setMessage('Connecting...')
-      await conversation.startSession({
-        agentId: AGENT_ID,
-        connectionType: 'websocket',
-      })
+      await connect()
+      setMessage("Hello! I'm ready to play.")
     } catch (err) {
       console.error('Failed to connect:', err)
       setError('Failed to connect. Please check your configuration.')
     }
-  }, [conversation])
+  }, [connect])
 
-  const handleDisconnect = useCallback(async () => {
-    try {
-      await conversation.endSession()
-    } catch (err) {
-      console.error('Failed to disconnect:', err)
-    }
-  }, [conversation])
-
-  // Get volume levels for Orb audio reactivity
-  const getInputVolume = useCallback(() => {
-    return conversation.getInputVolume?.() ?? 0
-  }, [conversation])
-
-  const getOutputVolume = useCallback(() => {
-    return conversation.getOutputVolume?.() ?? 0
-  }, [conversation])
+  const handleDisconnect = useCallback(() => {
+    disconnect()
+    setMessage('')
+    setListeningForPiano('not_listening')
+    midiCapture.clearCapture()
+  }, [disconnect, midiCapture])
 
   // Enhanced note handlers that also capture for evaluation
   const handleNoteOn = useCallback((midiNote: number, velocity: number = 80) => {
@@ -441,7 +432,7 @@ export function Lyra() {
 
         {/* Orb */}
         <LyraOrb
-          status={conversation.status}
+          status={status}
           agentState={agentState}
           onConnect={handleConnect}
           onDisconnect={handleDisconnect}

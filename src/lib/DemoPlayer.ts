@@ -49,6 +49,9 @@ export async function playDemonstration(
   const opts = { ...DEFAULT_OPTIONS, ...options }
   const { notes, timing, type } = pattern
 
+  // Ensure piano is fully ready before playing
+  await pianoAudio.ensureReady()
+
   callbacks.onStart?.()
 
   if (type === 'chord') {
@@ -288,6 +291,9 @@ export async function playCustomSequence(
   } = options
 
   const midiNotes = notes.map(n => n.midiNote)
+
+  // Ensure piano is fully ready before playing
+  await pianoAudio.ensureReady()
 
   callbacks.onStart?.()
 
