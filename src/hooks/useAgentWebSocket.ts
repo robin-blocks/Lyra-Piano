@@ -3,9 +3,11 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import type {
   QueueItem,
+  ToolQueueItem,
   AgentState,
   ConnectionStatus,
   ToolHandler,
+  ToolContext,
   ServerEvent,
   ClientToolResultMessage,
   PongMessage,
@@ -37,6 +39,10 @@ export function useAgentWebSocket({
   const wsRef = useRef<WebSocket | null>(null)
   const queueRef = useRef<QueueItem[]>([])
   const isProcessingRef = useRef(false)
+
+  // Separate tool queue for immediate execution (avoids timeout)
+  const toolQueueRef = useRef<ToolQueueItem[]>([])
+  const isProcessingToolsRef = useRef(false)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioWorkletRef = useRef<AudioWorkletNode | null>(null)
   const micAudioContextRef = useRef<AudioContext | null>(null)
@@ -61,7 +67,7 @@ export function useAgentWebSocket({
   }, [])
 
   /**
-   * Process the event queue sequentially
+   * Process the audio/action queue sequentially
    */
   const processQueue = useCallback(async () => {
     if (isProcessingRef.current || queueRef.current.length === 0) {
@@ -84,44 +90,14 @@ export function useAgentWebSocket({
         } catch (error) {
           console.error('Error playing audio:', error)
         }
-      } else if (item.type === 'tool_call') {
-        console.log(`[Queue] Executing tool: ${item.toolName}`, item.parameters)
-
+      } else if (item.type === 'action') {
+        // Execute deferred action (e.g., play piano notes after audio)
+        console.log(`[Queue] Executing action: ${item.description}`)
         try {
-          // Execute the tool handler
-          const handler = toolHandlersRef.current[item.toolName]
-          let result: string
-
-          if (handler) {
-            const handlerResult = await handler(item.parameters)
-            result = typeof handlerResult === 'string' ? handlerResult : JSON.stringify(handlerResult)
-          } else {
-            console.warn(`No handler for tool: ${item.toolName}`)
-            result = JSON.stringify({ error: 'UNKNOWN_TOOL', message: `No handler for ${item.toolName}` })
-          }
-
-          // Send result back to server
-          sendMessage({
-            type: 'client_tool_result',
-            tool_call_id: item.toolCallId,
-            result,
-            is_error: false,
-          })
-
-          console.log(`[Queue] Tool ${item.toolName} completed`)
+          await item.callback()
+          console.log(`[Queue] Action completed: ${item.description}`)
         } catch (error) {
-          console.error(`Error executing tool ${item.toolName}:`, error)
-
-          // Send error result
-          sendMessage({
-            type: 'client_tool_result',
-            tool_call_id: item.toolCallId,
-            result: JSON.stringify({
-              error: 'EXECUTION_ERROR',
-              message: error instanceof Error ? error.message : 'Unknown error',
-            }),
-            is_error: true,
-          })
+          console.error(`Error executing action ${item.description}:`, error)
         }
       }
     }
@@ -132,7 +108,74 @@ export function useAgentWebSocket({
     }
 
     isProcessingRef.current = false
-  }, [audioPlayer, sendMessage, status])
+  }, [audioPlayer, status])
+
+  /**
+   * Queue an action to be executed after current audio finishes
+   * This allows tool handlers to defer side-effects while responding immediately
+   */
+  const queueAction = useCallback((callback: () => Promise<void>, description: string) => {
+    queueRef.current.push({ type: 'action', callback, description })
+    processQueue()
+  }, [processQueue])
+
+  /**
+   * Process tool calls immediately (not queued behind audio)
+   * Handlers can use queueAction to defer side-effects
+   */
+  const processToolQueue = useCallback(async () => {
+    if (isProcessingToolsRef.current || toolQueueRef.current.length === 0) {
+      return
+    }
+
+    isProcessingToolsRef.current = true
+
+    while (toolQueueRef.current.length > 0) {
+      const item = toolQueueRef.current.shift()!
+
+      console.log(`[ToolQueue] Executing tool: ${item.toolName}`, item.parameters)
+
+      try {
+        const handler = toolHandlersRef.current[item.toolName]
+        let result: string
+
+        if (handler) {
+          // Pass queueAction context so handlers can defer side-effects
+          const context: ToolContext = { queueAction }
+          const handlerResult = await handler(item.parameters, context)
+          result = typeof handlerResult === 'string' ? handlerResult : JSON.stringify(handlerResult)
+        } else {
+          console.warn(`No handler for tool: ${item.toolName}`)
+          result = JSON.stringify({ error: 'UNKNOWN_TOOL', message: `No handler for ${item.toolName}` })
+        }
+
+        // Send result back to server immediately
+        sendMessage({
+          type: 'client_tool_result',
+          tool_call_id: item.toolCallId,
+          result,
+          is_error: false,
+        })
+
+        console.log(`[ToolQueue] Tool ${item.toolName} completed`)
+      } catch (error) {
+        console.error(`Error executing tool ${item.toolName}:`, error)
+
+        // Send error result
+        sendMessage({
+          type: 'client_tool_result',
+          tool_call_id: item.toolCallId,
+          result: JSON.stringify({
+            error: 'EXECUTION_ERROR',
+            message: error instanceof Error ? error.message : 'Unknown error',
+          }),
+          is_error: true,
+        })
+      }
+    }
+
+    isProcessingToolsRef.current = false
+  }, [sendMessage, queueAction])
 
   /**
    * Handle incoming WebSocket messages
@@ -154,15 +197,14 @@ export function useAgentWebSocket({
             break
 
           case 'client_tool_call':
-            // Queue tool call for sequential execution
+            // Route to tool queue for immediate execution (avoids timeout)
             console.log('[WS] Received tool call:', data.client_tool_call.tool_name)
-            queueRef.current.push({
-              type: 'tool_call',
+            toolQueueRef.current.push({
               toolName: data.client_tool_call.tool_name,
               toolCallId: data.client_tool_call.tool_call_id,
               parameters: data.client_tool_call.parameters,
             })
-            processQueue()
+            processToolQueue()
             break
 
           case 'agent_response':
@@ -197,7 +239,7 @@ export function useAgentWebSocket({
         console.error('Error parsing WebSocket message:', error)
       }
     },
-    [processQueue, audioPlayer, sendMessage, onAgentResponse, onUserTranscript]
+    [processQueue, processToolQueue, audioPlayer, sendMessage, onAgentResponse, onUserTranscript]
   )
 
   /**
@@ -344,7 +386,9 @@ export function useAgentWebSocket({
         setAgentState(null)
         cleanupMicrophone()
         queueRef.current = []
+        toolQueueRef.current = []
         isProcessingRef.current = false
+        isProcessingToolsRef.current = false
       }
     } catch (error) {
       console.error('Connection error:', error)
@@ -361,8 +405,9 @@ export function useAgentWebSocket({
 
     setStatus('disconnecting')
 
-    // Clear queue and stop playback
+    // Clear queues and stop playback
     queueRef.current = []
+    toolQueueRef.current = []
     audioPlayer.stop()
 
     // Close WebSocket

@@ -12,7 +12,7 @@ import { DemoPlayer, playCustomSequence, type SequenceNote } from '@/lib/DemoPla
 import { getPatternById, searchPatterns, PATTERNS, type ExpectedPattern, type PatternType } from '@/lib/patterns'
 import { evaluate } from '@/lib/MidiEvaluator'
 import { Note } from 'tonal'
-import type { ToolHandler, ConnectionStatus } from '@/types/elevenlabs-websocket'
+import type { ToolHandler, ToolContext, ConnectionStatus } from '@/types/elevenlabs-websocket'
 
 // Helper to convert MIDI number to note name (e.g., 60 -> C4)
 // Helper to convert MIDI number to note name (e.g., 60 -> C4)
@@ -106,7 +106,7 @@ export function Lyra() {
   // Memoized to maintain stable reference for the hook
   const toolHandlers = useMemo<Record<string, ToolHandler>>(() => ({
     // Play a single note by name (e.g., "C4", "F#3", "Bb5")
-    playNote: async (params) => {
+    playNote: async (params, { queueAction }) => {
       const { note, velocity = 80, duration = 500 } = params as { note: string; velocity?: number; duration?: number }
       console.log('Agent: Playing note:', note)
 
@@ -118,16 +118,20 @@ export function Lyra() {
         })
       }
 
-      await playNoteWithHighlight(midiNote, velocity, duration)
+      // Queue the actual playing to happen after audio finishes
+      queueAction(async () => {
+        await playNoteWithHighlight(midiNote, velocity, duration)
+      }, `playNote: ${note}`)
 
       return JSON.stringify({
-        played: note,
-        midiNote: midiNote
+        status: 'scheduled',
+        note,
+        midiNote
       })
     },
 
     // Play a sequence of notes (melody or chord)
-    playSequence: async (params) => {
+    playSequence: async (params, { queueAction }) => {
       const { notes, asChord, duration } = params as {
         notes: Array<string | { note: string; duration?: number }>;
         asChord?: boolean;
@@ -135,7 +139,7 @@ export function Lyra() {
       }
       console.log('Agent: Playing sequence:', params)
 
-      // Convert note names to MIDI numbers
+      // Convert note names to MIDI numbers (validation happens immediately)
       const sequenceNotes: SequenceNote[] = []
       const noteNames: string[] = []
 
@@ -158,29 +162,30 @@ export function Lyra() {
         noteNames.push(noteName)
       }
 
-      const pianoAudio = getPianoAudio()
-      await pianoAudio.initialize()
+      // Queue the actual playing to happen after audio finishes
+      queueAction(async () => {
+        const pianoAudio = getPianoAudio()
+        await pianoAudio.initialize()
 
-      const result = await playCustomSequence(
-        sequenceNotes,
-        pianoAudio,
-        {
-          onKeyHighlight: (note) => highlightKeys([note]),
-          onKeysHighlight: (notes) => highlightKeys(notes),
-          onKeyUnhighlight: () => clearHighlights(),
-        },
-        {
-          asChord,
-          duration,
-        }
-      )
+        await playCustomSequence(
+          sequenceNotes,
+          pianoAudio,
+          {
+            onKeyHighlight: (note) => highlightKeys([note]),
+            onKeysHighlight: (notes) => highlightKeys(notes),
+            onKeyUnhighlight: () => clearHighlights(),
+          },
+          {
+            asChord,
+            duration,
+          }
+        )
+      }, `playSequence: ${noteNames.join(', ')}`)
 
       return JSON.stringify({
-        notesPlayed: result.notesPlayed,
-        durationMs: result.durationMs,
+        status: 'scheduled',
         notes: noteNames,
-        midiNotes: result.midiNotes,
-        type: result.type,
+        asChord: !!asChord,
       })
     },
 
@@ -296,7 +301,7 @@ export function Lyra() {
     },
 
     // Demonstrate a pattern on the piano
-    demonstratePattern: async (params) => {
+    demonstratePattern: async (params, { queueAction }) => {
       const { patternId } = params as { patternId: string }
       console.log('Agent: Demonstrating pattern:', patternId)
 
@@ -305,18 +310,25 @@ export function Lyra() {
         return 'Pattern not found'
       }
 
-      if (!demoPlayerRef.current) {
-        // Initialize on demand
-        const pianoAudio = getPianoAudio()
-        await pianoAudio.initialize()
-        demoPlayerRef.current = new DemoPlayer(pianoAudio, {
-          onKeyHighlight: (note) => highlightKeys([note]),
-          onKeyUnhighlight: () => clearHighlights(),
-        })
-      }
+      // Queue the demonstration to happen after audio finishes
+      queueAction(async () => {
+        if (!demoPlayerRef.current) {
+          // Initialize on demand
+          const pianoAudio = getPianoAudio()
+          await pianoAudio.initialize()
+          demoPlayerRef.current = new DemoPlayer(pianoAudio, {
+            onKeyHighlight: (note) => highlightKeys([note]),
+            onKeyUnhighlight: () => clearHighlights(),
+          })
+        }
+        await demoPlayerRef.current.play(pattern)
+      }, `demonstratePattern: ${pattern.name}`)
 
-      await demoPlayerRef.current.play(pattern)
-      return `Demonstrated ${pattern.name}`
+      return JSON.stringify({
+        status: 'scheduled',
+        patternId,
+        patternName: pattern.name,
+      })
     },
 
     // Highlight specific keys on the piano

@@ -121,7 +121,13 @@ export type ClientMessage =
 
 export type QueueItem =
   | { type: 'audio'; audioBase64: string; eventId: number }
-  | { type: 'tool_call'; toolName: string; toolCallId: string; parameters: Record<string, unknown> }
+  | { type: 'action'; callback: () => Promise<void>; description: string }
+
+export interface ToolQueueItem {
+  toolName: string
+  toolCallId: string
+  parameters: Record<string, unknown>
+}
 
 // =============================================================================
 // Hook Types
@@ -130,9 +136,14 @@ export type QueueItem =
 export type AgentState = 'idle' | 'listening' | 'speaking' | null
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'disconnecting'
 
-export interface ToolHandler {
-  (parameters: Record<string, unknown>): Promise<string> | string
+export interface ToolContext {
+  queueAction: (callback: () => Promise<void>, description: string) => void
 }
+
+export type ToolHandler = (
+  parameters: Record<string, unknown>,
+  context: ToolContext
+) => Promise<string | object> | string | object
 
 export interface AgentWebSocketConfig {
   agentId: string
