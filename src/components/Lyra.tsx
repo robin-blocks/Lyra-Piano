@@ -15,8 +15,21 @@ import { Note } from 'tonal'
 import type { ToolHandler, ConnectionStatus } from '@/types/elevenlabs-websocket'
 
 // Helper to convert MIDI number to note name (e.g., 60 -> C4)
+// Helper to convert MIDI number to note name (e.g., 60 -> C4)
+// Returns both enharmonics for black keys to avoid AI confusion (e.g. "F#4 / Gb4")
 function midiToNoteName(midi: number): string {
-  return Note.fromMidi(midi) || 'Unknown'
+  const noteName = Note.fromMidi(midi)
+  if (!noteName) return 'Unknown'
+
+  if (noteName.includes('#')) {
+    const flat = Note.enharmonic(noteName)
+    if (flat && flat !== noteName) return `${noteName} / ${flat}`
+  } else if (noteName.includes('b')) {
+    const sharp = Note.enharmonic(noteName)
+    if (sharp && sharp !== noteName) return `${sharp} / ${noteName}`
+  }
+
+  return noteName
 }
 
 // Environment variable for agent ID - will be set in .env.local
