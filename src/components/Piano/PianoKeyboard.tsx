@@ -145,41 +145,14 @@ export function PianoKeyboard({
     [handleNoteOn]
   )
 
-  // Get key colors - using solid colors to avoid SVG gradient ID conflicts
+  // Get key colors - static colors only
   const getKeyColors = (key: KeyInfo) => {
-    const isPressed = pressedKeys.has(key.midiNote)
-    const isHighlighted = highlightedKeys.has(key.midiNote)
-
     if (key.isBlack) {
-      if (isPressed) {
-        return {
-          fill: '#7e0fff',
-          stroke: '#0fffc1',
-        }
-      }
-      if (isHighlighted) {
-        return {
-          fill: '#4a3a6a',
-          stroke: '#7e0fff',
-        }
-      }
       return {
         fill: '#1a1a2e',
         stroke: '#2a2a3e',
       }
     } else {
-      if (isPressed) {
-        return {
-          fill: '#0fffc1',
-          stroke: '#7e0fff',
-        }
-      }
-      if (isHighlighted) {
-        return {
-          fill: '#2a3a4a',
-          stroke: '#0fffc1',
-        }
-      }
       return {
         fill: '#f0f0f8',
         stroke: '#c8c8d0',
@@ -227,9 +200,6 @@ export function PianoKeyboard({
               stroke={colors.stroke}
               strokeWidth={1}
               className="cursor-pointer"
-              style={{
-                filter: isPressed ? 'brightness(1.1) drop-shadow(0 0 8px rgba(15, 255, 193, 0.5))' : undefined,
-              }}
               onPointerDown={(e) => handleNoteOn(key.midiNote, e)}
               onPointerUp={() => handleNoteOff(key.midiNote)}
               onPointerLeave={(e) => handlePointerLeave(key.midiNote, e)}
@@ -255,14 +225,50 @@ export function PianoKeyboard({
               stroke={colors.stroke}
               strokeWidth={1}
               className="cursor-pointer"
-              style={{
-                filter: isPressed ? 'brightness(1.2) drop-shadow(0 0 8px rgba(126, 15, 255, 0.5))' : undefined,
-              }}
               onPointerDown={(e) => handleNoteOn(key.midiNote, e)}
               onPointerUp={() => handleNoteOff(key.midiNote)}
               onPointerLeave={(e) => handlePointerLeave(key.midiNote, e)}
               onPointerEnter={(e) => handlePointerEnter(key.midiNote, e)}
               onPointerCancel={() => handleNoteOff(key.midiNote)}
+            />
+          )
+        })}
+
+        {/* Indicators (render on top of everything) */}
+        {displayKeys.map((key) => {
+          const isPressed = pressedKeys.has(key.midiNote)
+          const isHighlighted = highlightedKeys.has(key.midiNote)
+
+          if (!isPressed && !isHighlighted) return null
+
+          // Priority: Pressed (User) > Highlighted (Agent)
+          const isUser = isPressed
+
+          // Center X
+          const width = key.isBlack ? BLACK_KEY_WIDTH : WHITE_KEY_WIDTH
+          const cx = (key.xPosition - xOffset) + width / 2
+
+          // Center Y
+          // White key dot near bottom
+          // Black key dot near bottom of black key
+          const cy = key.isBlack ? (BLACK_KEY_HEIGHT - 10) : (WHITE_KEY_HEIGHT - 12)
+
+          // Colors
+          // User: Orange theme
+          // Agent: Slate/Blue theme (from image)
+          const fill = isUser ? '#e05a00' : '#4b4b5e'
+          const stroke = isUser ? '#ffaa55' : '#7a7a8f'
+
+          return (
+            <circle
+              key={`dot-${key.midiNote}`}
+              cx={cx}
+              cy={cy}
+              r={key.isBlack ? 3.5 : 4.5}
+              fill={fill}
+              stroke={stroke}
+              strokeWidth={2}
+              style={{ pointerEvents: 'none' }}
             />
           )
         })}
