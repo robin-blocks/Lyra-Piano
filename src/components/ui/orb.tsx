@@ -2,7 +2,7 @@
 
 import { useRef, useMemo } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { Sphere, MeshDistortMaterial, GradientTexture } from '@react-three/drei'
+import { Sphere, MeshDistortMaterial, GradientTexture, Environment } from '@react-three/drei'
 import * as THREE from 'three'
 
 type AgentState = 'idle' | 'listening' | 'talking' | null
@@ -71,10 +71,10 @@ function OrbMesh({ colors, agentState, getInputVolume, getOutputVolume }: OrbMes
         attach="material"
         distort={distort}
         speed={distortSpeed}
-        roughness={0.25}
+        roughness={0.15}
         metalness={0.2}
-        emissive={colors[1]}
-        emissiveIntensity={0.15}
+        clearcoat={1}
+        clearcoatRoughness={0.1}
       >
         <GradientTexture stops={[0, 1]} colors={[colors[0], colors[1]]} size={1024} />
       </MeshDistortMaterial>
@@ -100,14 +100,11 @@ export function Orb({
   return (
     <div className={className} style={{ width: '100%', height: '100%', overflow: 'visible' }}>
       <Canvas
-        camera={{ position: [0, 0, 3.5], fov: 45 }}
+        camera={{ position: [0, 0, 6], fov: 45 }}
         gl={{ antialias: true, alpha: true }}
         style={{ background: 'transparent', overflow: 'visible' }}
       >
-        <ambientLight intensity={0.5} />
-        <pointLight position={[10, 10, 10]} intensity={1.5} />
-        <pointLight position={[-10, -10, -10]} intensity={0.8} color="#C4B5FD" />
-        <pointLight position={[-3, 5, 5]} intensity={5} color={colors[2]} />
+        <Environment preset="studio" />
         <OrbMesh
           colors={colors}
           agentState={agentState}

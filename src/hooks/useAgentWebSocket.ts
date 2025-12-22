@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import type {
   QueueItem,
   AgentState,
@@ -400,14 +400,71 @@ export function useAgentWebSocket({
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return {
+  /**
+   * Inject audio into the stream
+   */
+  const triggerAudio = useCallback(async (url: string) => {
+    if (status !== 'connected' || !wsRef.current) return
+
+    try {
+      const response = await fetch(url)
+      const arrayBuffer = await response.arrayBuffer()
+
+      // Always use a new context for decoding to avoid state issues
+      const ctx = new AudioContext({ sampleRate: 16000 })
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer)
+
+      // Get channel data (mono)
+      const channelData = audioBuffer.getChannelData(0)
+
+      // Convert to Int16
+      const int16Data = new Int16Array(channelData.length)
+      for (let i = 0; i < channelData.length; i++) {
+        const s = Math.max(-1, Math.min(1, channelData[i]))
+        int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+      }
+
+      // Send in chunks to avoid message size limits
+      const CHUNK_SIZE = 4096 // 4KB chunks
+      for (let i = 0; i < int16Data.length; i += CHUNK_SIZE) {
+        const chunk = int16Data.slice(i, i + CHUNK_SIZE)
+        const base64 = btoa(
+          String.fromCharCode(...new Uint8Array(chunk.buffer))
+        )
+
+        wsRef.current.send(JSON.stringify({
+          user_audio_chunk: base64
+        }))
+
+        // Small delay to prevent flooding
+        await new Promise(r => setTimeout(r, 10))
+      }
+
+      await ctx.close()
+      console.log('[Audio] Injected trigger:', url)
+    } catch (err) {
+      console.error('Failed to inject audio:', err)
+    }
+  }, [status])
+
+  // Memoize return object to avoid infinite loops in consumers
+  return useMemo(() => ({
     connect,
     disconnect,
     status,
     agentState,
     getInputVolume,
     getOutputVolume,
-  }
+    triggerAudio
+  }), [
+    connect,
+    disconnect,
+    status,
+    agentState,
+    getInputVolume,
+    getOutputVolume,
+    triggerAudio
+  ])
 }
 
 export default useAgentWebSocket

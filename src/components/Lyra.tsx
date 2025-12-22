@@ -9,10 +9,15 @@ import { useMidiInput } from '@/hooks/useMidiInput'
 import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
 import { getPianoAudio } from '@/lib/PianoAudio'
 import { DemoPlayer, playCustomSequence, type SequenceNote } from '@/lib/DemoPlayer'
-import { getPatternById, searchPatterns, PATTERNS } from '@/lib/patterns'
+import { getPatternById, searchPatterns, PATTERNS, type ExpectedPattern, type PatternType } from '@/lib/patterns'
 import { evaluate } from '@/lib/MidiEvaluator'
 import { Note } from 'tonal'
 import type { ToolHandler, ConnectionStatus } from '@/types/elevenlabs-websocket'
+
+// Helper to convert MIDI number to note name (e.g., 60 -> C4)
+function midiToNoteName(midi: number): string {
+  return Note.fromMidi(midi) || 'Unknown'
+}
 
 // Environment variable for agent ID - will be set in .env.local
 const AGENT_ID = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID || ''
@@ -59,6 +64,12 @@ export function Lyra() {
       })
     }
   }, [pianoInitialized, highlightKeys, clearHighlights])
+
+  // Ref to store passively captured notes
+  const lastPassiveNotesRef = useRef<string[]>([])
+
+  // Track if we are in a manual tool call (blocking passive listener)
+  const isBlockingRef = useRef(false)
 
   // Helper to play a single note with highlighting
   const playNoteWithHighlight = async (
@@ -160,42 +171,115 @@ export function Lyra() {
       })
     },
 
-    // Start listening for user piano input
-    startListeningToUser: async () => {
-      console.log('Agent: Starting to listen for user piano input')
-      midiCapture.startCapture()
+    // Listen for user playing. 
+    // If expectedNotes are provided, evaluates against them.
+    // If not, returns the raw notes played for the Agent to evaluate.
+    listenAndEvaluate: async (params) => {
+      isBlockingRef.current = true
+      const { expectedNotes, type = 'melody', timeLimitMs = 15000 } = params as {
+        expectedNotes?: string[],
+        type?: PatternType,
+        timeLimitMs?: number
+      }
+
+      console.log('Agent: Listening. Expected:', expectedNotes || '(Any)')
       setListeningForPiano('listening_for_piano')
-      return 'Now listening for piano input. Tell me when you\'re done playing.'
+
+      // Convert expected notes to MIDI if provided
+      const expectedMidiNotes: number[] = []
+      if (expectedNotes) {
+        for (const noteName of expectedNotes) {
+          const midi = Note.midi(noteName)
+          if (midi !== null) expectedMidiNotes.push(midi)
+        }
+      }
+
+      return new Promise<string>((resolve) => {
+        let isResolved = false
+
+        const handleComplete = () => {
+          if (isResolved) return
+          isResolved = true
+
+          const phrase = midiCapture.endCapture()
+          setListeningForPiano('processing')
+
+          if (!phrase || phrase.notes.length === 0) {
+            setListeningForPiano('not_listening')
+            resolve(JSON.stringify({
+              error: 'No notes were captured',
+              feedback: 'I didn\'t hear any notes. Please try again.',
+              passed: false
+            }))
+            return
+          }
+
+          let result: string
+
+          // If we have expected notes, use the built-in evaluator
+          if (expectedMidiNotes.length > 0) {
+            const tempPattern: ExpectedPattern = {
+              id: 'temp-eval',
+              name: 'Current Lesson',
+              description: 'Dynamic pattern from agent',
+              notes: expectedMidiNotes,
+              type: type,
+              difficulty: 1
+            }
+            // Return full analysis object
+            result = JSON.stringify(evaluate(phrase, tempPattern))
+          }
+          // Otherwise, just return what was played
+          else {
+            const playedMidi = phrase.notes
+              .filter(n => n.type === 'noteOn')
+              .map(n => n.midiNote)
+
+            // Deduplicate for cleaner output if it's a chord
+            const uniquePlayed = type === 'chord'
+              ? Array.from(new Set(playedMidi))
+              : playedMidi
+
+            const noteNames = uniquePlayed.map(midiToNoteName)
+
+            result = JSON.stringify({
+              playedNotes: noteNames,
+              count: noteNames.length,
+              status: "success"
+            })
+          }
+
+          // Small delay before clearing state
+          setTimeout(() => {
+            setListeningForPiano('not_listening')
+            isBlockingRef.current = false
+          }, 500)
+
+          resolve(result)
+        }
+
+        // Start capture with silence callback
+        midiCapture.startCapture({ onPhraseEnd: handleComplete })
+
+        // Safety timeout
+        setTimeout(() => {
+          if (!isResolved) {
+            console.log('Time limit reached, finishing capture')
+            handleComplete()
+          }
+        }, timeLimitMs)
+      })
     },
 
-    // Stop listening and evaluate the user's playing
-    evaluateUserPlaying: async (params) => {
-      const { patternId } = params as { patternId: string }
-      console.log('Agent: Evaluating user playing for pattern:', patternId)
-      setListeningForPiano('processing')
-
-      const phrase = midiCapture.endCapture()
-      if (!phrase || phrase.notes.length === 0) {
-        setListeningForPiano('not_listening')
-        return JSON.stringify({
-          error: 'No notes were captured',
-          feedback: 'I didn\'t hear any notes. Try playing something on the piano.',
-        })
-      }
-
-      const pattern = getPatternById(patternId)
-      if (!pattern) {
-        setListeningForPiano('not_listening')
-        return JSON.stringify({
-          error: 'Pattern not found',
-          feedback: 'I couldn\'t find that pattern. Let\'s try something else.',
-        })
-      }
-
-      const result = evaluate(phrase, pattern)
-      setListeningForPiano('not_listening')
-
-      return JSON.stringify(result)
+    // Get the most recent notes played by the user (passive capture)
+    getRecentNotes: async () => {
+      console.log('Agent: Fetching recent notes')
+      const notes = lastPassiveNotesRef.current
+      return JSON.stringify({
+        playedNotes: notes,
+        count: notes.length,
+        status: "success"
+      })
     },
 
     // Demonstrate a pattern on the piano
@@ -295,6 +379,7 @@ export function Lyra() {
     agentState: wsAgentState,
     getInputVolume,
     getOutputVolume,
+    triggerAudio,
   } = useAgentWebSocket({
     agentId: AGENT_ID,
     toolHandlers,
@@ -309,6 +394,64 @@ export function Lyra() {
       setError('Connection error. Please try again.')
     },
   })
+
+  // Destructure stable methods to avoid useEffect dependency cycles
+  const {
+    startCapture: startMidiCapture,
+    endCapture: endMidiCapture,
+    clearCapture: clearMidiCapture,
+    isCapturing
+  } = midiCapture
+
+  // Passive listening loop
+  useEffect(() => {
+    // If we are blocking (tool running) or not connected, don't passive listen
+    if (status !== 'connected' || listeningForPiano !== 'not_listening') return
+
+    // Callback when passive phrase is detected
+    const handlePassivePhrase = () => {
+      if (isBlockingRef.current) return
+
+      const phrase = endMidiCapture()
+      if (phrase && phrase.notes.length > 0) {
+        const playedMidi = phrase.notes
+          .filter(n => n.type === 'noteOn')
+          .map(n => n.midiNote)
+
+        const noteNames = playedMidi.map(midiToNoteName)
+        console.log('[Passive] User played:', noteNames)
+
+        // Validate "significance": ignore single accidental bumps? 
+        // Let's accept anything > 0 notes for now.
+        lastPassiveNotesRef.current = noteNames
+
+        // INJECT TRIGGER
+        triggerAudio('/piano_trigger.wav')
+      }
+
+      // Resume passive listening immediately
+      startPassive()
+    }
+
+    const startPassive = () => {
+      if (isBlockingRef.current) return
+      // Start capturing with our callback
+      startMidiCapture({ onPhraseEnd: handlePassivePhrase })
+    }
+
+    startPassive()
+
+    // Cleanup: clear capture when this effect invalidates (e.g. status change)
+    return () => {
+      // We don't want to stop capture if we are just unmounting to remount
+      // But midiCapture is a hook... 
+      // We'll rely on the next render logic.
+      // Actually, we should probably stop capture if we disconnect
+      if (status !== 'connected') {
+        clearMidiCapture()
+      }
+    }
+  }, [status, listeningForPiano, startMidiCapture, endMidiCapture, clearMidiCapture, triggerAudio])
 
   // Map WebSocket agent state to orb-compatible state
   const agentState = mapAgentState(wsAgentState)
@@ -364,12 +507,8 @@ export function Lyra() {
   }, [stopNote, midiCapture])
 
   // Handle "Done" button - tell the agent user finished playing
-  const handleDonePlaying = useCallback(() => {
-    // The agent will call evaluateUserPlaying when it receives this message
-    // For now, we just notify via console - the voice interaction handles this
-    console.log('User indicated they are done playing')
-    // In a real scenario, you might send a signal to the agent here
-  }, [])
+  // Handle "Done" button - deprecated but kept for cleanup
+  // const handleDonePlaying = useCallback(() => { ... })
 
   // Handle sustain pedal
   const handleSustain = useCallback((active: boolean) => {
@@ -454,20 +593,14 @@ export function Lyra() {
           )}
           {/* Listening for piano indicator */}
           {listeningForPiano === 'listening_for_piano' && (
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <span className="relative flex h-3 w-3">
+            <div className="flex items-end justify-center gap-2 mb-2 animate-pulse">
+              <span className="relative flex h-3 w-3 mb-1.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-lyra-orb-1 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-lyra-orb-1"></span>
               </span>
               <p className="text-lyra-orb-1 text-sm font-medium">
-                Listening... Play your notes, then say "I'm done" or click Done
+                Listening...
               </p>
-              <button
-                onClick={handleDonePlaying}
-                className="ml-2 px-3 py-1 text-xs font-medium bg-lyra-orb-1/20 text-lyra-orb-1 rounded-full hover:bg-lyra-orb-1/30 transition-colors"
-              >
-                Done
-              </button>
             </div>
           )}
           {listeningForPiano === 'processing' && (

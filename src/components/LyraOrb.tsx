@@ -94,12 +94,12 @@ export function LyraOrb({
 
         {/* Orb (shown when connected) */}
         {isConnected && (
-          <div className="absolute -inset-8 transition-opacity duration-500 opacity-100 overflow-visible">
+          <div className="absolute -inset-32 transition-opacity duration-500 opacity-100 overflow-visible">
             <Orb
               agentState={agentState}
               getInputVolume={getInputVolume}
               getOutputVolume={getOutputVolume}
-              colors={['#DDD6FE', '#C4B5FD', '#F5F3FF']}
+              colors={['#F3E8FF', '#E9D5FF', '#FFFFFF']}
             />
           </div>
         )}

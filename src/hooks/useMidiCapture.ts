@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 
 export interface MidiEvent {
   type: 'noteOn' | 'noteOff'
@@ -29,8 +29,8 @@ interface UseMidiCaptureReturn {
   isCapturing: boolean
   /** Current phrase being captured */
   currentPhrase: MusicalPhrase | null
-  /** Start capturing MIDI events */
-  startCapture: () => void
+  /** Start capturing MIDI events. Optionally provide a callback for when a phrase is detected (silence). */
+  startCapture: (options?: { onPhraseEnd?: () => void }) => void
   /** End capture and return the captured phrase */
   endCapture: () => MusicalPhrase | null
   /** Record a note event */
@@ -49,14 +49,23 @@ export function useMidiCapture(): UseMidiCaptureReturn {
   const [currentPhrase, setCurrentPhrase] = useState<MusicalPhrase | null>(null)
 
   const phraseRef = useRef<MusicalPhrase | null>(null)
+
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const onPhraseEndRef = useRef<(() => void) | null>(null)
 
   // Start capturing
-  const startCapture = useCallback(() => {
+  const startCapture = useCallback((options?: { onPhraseEnd?: () => void }) => {
     // Clear any existing timeout
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current)
       silenceTimeoutRef.current = null
+    }
+
+    // specific callback for this capture session
+    if (options?.onPhraseEnd) {
+      onPhraseEndRef.current = options.onPhraseEnd
+    } else {
+      onPhraseEndRef.current = null
     }
 
     const now = Date.now()
@@ -85,6 +94,7 @@ export function useMidiCapture(): UseMidiCaptureReturn {
       phrase.endTime = Date.now()
     }
 
+    onPhraseEndRef.current = null
     phraseRef.current = null
     setCurrentPhrase(null)
     setIsCapturing(false)
@@ -134,9 +144,10 @@ export function useMidiCapture(): UseMidiCaptureReturn {
 
       // Auto-end phrase after silence threshold
       silenceTimeoutRef.current = setTimeout(() => {
-        // Don't auto-end, just mark that silence was detected
-        // The parent can check this and prompt user
         console.log('Silence detected - phrase may be complete')
+        if (onPhraseEndRef.current) {
+          onPhraseEndRef.current()
+        }
       }, PHRASE_SILENCE_THRESHOLD_MS)
     }
   }, [])
@@ -179,7 +190,7 @@ export function useMidiCapture(): UseMidiCaptureReturn {
     return clusters
   }, [])
 
-  return {
+  return useMemo<UseMidiCaptureReturn>(() => ({
     isCapturing,
     currentPhrase,
     startCapture,
@@ -187,7 +198,15 @@ export function useMidiCapture(): UseMidiCaptureReturn {
     recordNoteEvent,
     clearCapture,
     getChordClusters,
-  }
+  }), [
+    isCapturing,
+    currentPhrase,
+    startCapture,
+    endCapture,
+    recordNoteEvent,
+    clearCapture,
+    getChordClusters,
+  ])
 }
 
 export default useMidiCapture
