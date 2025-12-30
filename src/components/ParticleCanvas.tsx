@@ -26,7 +26,8 @@ interface ParticleCanvasProps {
 }
 
 // Particle settings
-const PARTICLE_COLOR = { r: 224, g: 90, b: 0 } // #e05a00
+const PARTICLE_COLOR_START = { r: 224, g: 90, b: 0 } // #e05a00 (orange)
+const PARTICLE_COLOR_END = { r: 255, g: 255, b: 255 } // white
 const MAX_PARTICLES = 300
 const SPAWN_RATE = 50 // ms between spawns per key
 const PARTICLE_SIZE_MIN = 2
@@ -140,21 +141,40 @@ export function ParticleCanvas({
 
       aliveParticles.push(p)
 
+      // Calculate color transition progress (0 = orange, 1 = white)
+      let colorProgress = 0
+      if (orbPosition) {
+        const midpointY = (p.spawnY + orbPosition.y) / 2
+        if (p.y < midpointY) {
+          const totalDistance = midpointY - orbPosition.y
+          const distanceFromMidpoint = midpointY - p.y
+          colorProgress = Math.min(1, distanceFromMidpoint / totalDistance)
+        }
+      }
+
+      // Lerp between orange and white
+      const r = Math.round(PARTICLE_COLOR_START.r + (PARTICLE_COLOR_END.r - PARTICLE_COLOR_START.r) * colorProgress)
+      const g = Math.round(PARTICLE_COLOR_START.g + (PARTICLE_COLOR_END.g - PARTICLE_COLOR_START.g) * colorProgress)
+      const b = Math.round(PARTICLE_COLOR_START.b + (PARTICLE_COLOR_END.b - PARTICLE_COLOR_START.b) * colorProgress)
+
       // Draw particle with glow effect
       const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 2)
-      gradient.addColorStop(0, `rgba(${PARTICLE_COLOR.r}, ${PARTICLE_COLOR.g}, ${PARTICLE_COLOR.b}, ${p.alpha})`)
-      gradient.addColorStop(0.4, `rgba(${PARTICLE_COLOR.r}, ${PARTICLE_COLOR.g}, ${PARTICLE_COLOR.b}, ${p.alpha * 0.6})`)
-      gradient.addColorStop(1, `rgba(${PARTICLE_COLOR.r}, ${PARTICLE_COLOR.g}, ${PARTICLE_COLOR.b}, 0)`)
+      gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${p.alpha})`)
+      gradient.addColorStop(0.4, `rgba(${r}, ${g}, ${b}, ${p.alpha * 0.6})`)
+      gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`)
 
       ctx.beginPath()
       ctx.arc(p.x, p.y, p.size * 2, 0, Math.PI * 2)
       ctx.fillStyle = gradient
       ctx.fill()
 
-      // Core bright center
+      // Core bright center (also transitions to white)
+      const coreR = Math.round(255 + (255 - 255) * colorProgress)
+      const coreG = Math.round(180 + (255 - 180) * colorProgress)
+      const coreB = Math.round(100 + (255 - 100) * colorProgress)
       ctx.beginPath()
       ctx.arc(p.x, p.y, p.size * 0.5, 0, Math.PI * 2)
-      ctx.fillStyle = `rgba(255, 180, 100, ${p.alpha})`
+      ctx.fillStyle = `rgba(${coreR}, ${coreG}, ${coreB}, ${p.alpha})`
       ctx.fill()
     }
 

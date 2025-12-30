@@ -3,7 +3,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Lyra - AI Piano Teacher',
-  description: 'Your AI companion for mastering the keys. Learn piano through natural conversation with Lyra.',
+  description: 'Your AI music teacher built with ElevenLabs and Google Cloud. Learn piano through natural conversation with Lyra.',
   keywords: ['piano', 'AI', 'music education', 'ElevenLabs', 'Gemini'],
 }
 

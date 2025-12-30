@@ -518,7 +518,7 @@ export function Lyra() {
             Play piano with Lyra.
           </h1>
           <p className="text-lyra-muted text-lg md:text-xl">
-            Your AI companion for mastering the keys.
+            Your AI music teacher built with ElevenLabs and Google Cloud.
           </p>
         </div>
 

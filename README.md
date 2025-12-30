@@ -1,6 +1,6 @@
 # Lyra - AI Piano Teacher
 
-> Your AI companion for mastering the keys. Learn piano through natural conversation.
+> Your AI music teacher built with ElevenLabs and Google Cloud. Learn piano through natural conversation.
 
 Lyra is a voice-driven AI piano teacher built for the **Google Cloud AI Partner Catalyst Hackathon** (ElevenLabs Challenge). It combines ElevenLabs Conversational AI with Google Gemini to create an accessible, conversational piano learning experience.
 
