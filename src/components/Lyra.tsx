@@ -189,11 +189,10 @@ export function Lyra() {
       })
     },
 
-    // Listen for user playing. 
+    // Listen for user playing.
     // If expectedNotes are provided, evaluates against them.
     // If not, returns the raw notes played for the Agent to evaluate.
-    listenAndEvaluate: async (params) => {
-      isBlockingRef.current = true
+    listenAndEvaluate: async (params, { queueAction }) => {
       const { expectedNotes, type = 'melody', timeLimitMs = 15000 } = params as {
         expectedNotes?: string[],
         type?: PatternType,
@@ -201,9 +200,8 @@ export function Lyra() {
       }
 
       console.log('Agent: Listening. Expected:', expectedNotes || '(Any)')
-      setListeningForPiano('listening_for_piano')
 
-      // Convert expected notes to MIDI if provided
+      // Convert expected notes to MIDI if provided (validation happens immediately)
       const expectedMidiNotes: number[] = []
       if (expectedNotes) {
         for (const noteName of expectedNotes) {
@@ -212,81 +210,90 @@ export function Lyra() {
         }
       }
 
+      // Return a promise that resolves when listening completes
       return new Promise<string>((resolve) => {
-        let isResolved = false
+        // Queue the listening to start AFTER audio finishes
+        // This ensures user hears "Now you try!" and any chord demos first
+        queueAction(async () => {
+          isBlockingRef.current = true
+          setListeningForPiano('listening_for_piano')
 
-        const handleComplete = () => {
-          if (isResolved) return
-          isResolved = true
+          let isResolved = false
 
-          const phrase = midiCapture.endCapture()
-          setListeningForPiano('processing')
+          const handleComplete = () => {
+            if (isResolved) return
+            isResolved = true
 
-          if (!phrase || phrase.notes.length === 0) {
-            setListeningForPiano('not_listening')
-            resolve(JSON.stringify({
-              error: 'No notes were captured',
-              feedback: 'I didn\'t hear any notes. Please try again.',
-              passed: false
-            }))
-            return
-          }
+            const phrase = midiCapture.endCapture()
+            setListeningForPiano('processing')
 
-          let result: string
-
-          // If we have expected notes, use the built-in evaluator
-          if (expectedMidiNotes.length > 0) {
-            const tempPattern: ExpectedPattern = {
-              id: 'temp-eval',
-              name: 'Current Lesson',
-              description: 'Dynamic pattern from agent',
-              notes: expectedMidiNotes,
-              type: type,
-              difficulty: 1
+            if (!phrase || phrase.notes.length === 0) {
+              setListeningForPiano('not_listening')
+              isBlockingRef.current = false
+              resolve(JSON.stringify({
+                error: 'No notes were captured',
+                feedback: 'I didn\'t hear any notes. Please try again.',
+                passed: false
+              }))
+              return
             }
-            // Return full analysis object
-            result = JSON.stringify(evaluate(phrase, tempPattern))
+
+            let result: string
+
+            // If we have expected notes, use the built-in evaluator
+            if (expectedMidiNotes.length > 0) {
+              const tempPattern: ExpectedPattern = {
+                id: 'temp-eval',
+                name: 'Current Lesson',
+                description: 'Dynamic pattern from agent',
+                notes: expectedMidiNotes,
+                type: type,
+                difficulty: 1
+              }
+              // Return full analysis object
+              result = JSON.stringify(evaluate(phrase, tempPattern))
+            }
+            // Otherwise, just return what was played
+            else {
+              const playedMidi = phrase.notes
+                .filter(n => n.type === 'noteOn')
+                .map(n => n.midiNote)
+
+              // For chords: deduplicate and sort by pitch (low to high)
+              // For melodies: preserve play order
+              const processedMidi = type === 'chord'
+                ? Array.from(new Set(playedMidi)).sort((a, b) => a - b)
+                : playedMidi
+
+              const noteNames = processedMidi.map(midiToNoteName)
+
+              result = JSON.stringify({
+                playedNotes: noteNames,
+                count: noteNames.length,
+                status: "success"
+              })
+            }
+
+            // Small delay before clearing state
+            setTimeout(() => {
+              setListeningForPiano('not_listening')
+              isBlockingRef.current = false
+            }, 500)
+
+            resolve(result)
           }
-          // Otherwise, just return what was played
-          else {
-            const playedMidi = phrase.notes
-              .filter(n => n.type === 'noteOn')
-              .map(n => n.midiNote)
 
-            // For chords: deduplicate and sort by pitch (low to high)
-            // For melodies: preserve play order
-            const processedMidi = type === 'chord'
-              ? Array.from(new Set(playedMidi)).sort((a, b) => a - b)
-              : playedMidi
+          // Start capture with silence callback
+          midiCapture.startCapture({ onPhraseEnd: handleComplete })
 
-            const noteNames = processedMidi.map(midiToNoteName)
-
-            result = JSON.stringify({
-              playedNotes: noteNames,
-              count: noteNames.length,
-              status: "success"
-            })
-          }
-
-          // Small delay before clearing state
+          // Safety timeout
           setTimeout(() => {
-            setListeningForPiano('not_listening')
-            isBlockingRef.current = false
-          }, 500)
-
-          resolve(result)
-        }
-
-        // Start capture with silence callback
-        midiCapture.startCapture({ onPhraseEnd: handleComplete })
-
-        // Safety timeout
-        setTimeout(() => {
-          if (!isResolved) {
-            console.log('Time limit reached, finishing capture')
-            handleComplete()
-          }
-        }, timeLimitMs)
+            if (!isResolved) {
+              console.log('Time limit reached, finishing capture')
+              handleComplete()
+            }
+          }, timeLimitMs)
+        }, 'listenAndEvaluate: waiting for user input')
       })
     },
 
