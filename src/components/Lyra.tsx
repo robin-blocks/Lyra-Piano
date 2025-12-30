@@ -578,13 +578,48 @@ export function Lyra() {
       {/* Piano Keyboard */}
       <footer className="w-full max-w-[496px] md:max-w-[1184px]">
         <div className="bg-lyra-surface/50 rounded-t-xl border-t border-lyra-accent/20 p-2 md:p-4">
-          {/* MIDI device indicator */}
-          {midiDevice && (
-            <div className="flex items-center justify-center gap-1 mb-2">
-              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              <span className="text-xs text-lyra-muted">Connected to: {midiDevice.name}</span>
-            </div>
-          )}
+          {/* MIDI device status */}
+          <div className="flex items-center justify-center gap-2 mb-2">
+            {midiDevice ? (
+              <>
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                <span className="text-xs text-lyra-muted">Connected to: {midiDevice.name}</span>
+              </>
+            ) : (
+              <div className="relative group">
+                <button className="flex items-center gap-1.5 text-xs text-lyra-muted hover:text-lyra-text transition-colors">
+                  <span>Connect a MIDI piano</span>
+                  <svg className="w-3.5 h-3.5 text-lyra-accent" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+                </button>
+
+                {/* Tooltip */}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-lyra-surface border border-lyra-accent/30 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-20">
+                  <h4 className="text-sm font-semibold text-lyra-text mb-2">How to connect your piano</h4>
+                  <ul className="text-xs text-lyra-muted space-y-1.5">
+                    <li className="flex gap-2">
+                      <span className="text-lyra-orb-1">1.</span>
+                      <span>Connect your MIDI keyboard or digital piano via USB</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-lyra-orb-1">2.</span>
+                      <span>Allow MIDI access when your browser prompts you</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-lyra-orb-1">3.</span>
+                      <span>Your piano will be detected automatically</span>
+                    </li>
+                  </ul>
+                  <p className="text-xs text-lyra-muted mt-2 pt-2 border-t border-lyra-accent/20">
+                    <span className="text-lyra-orb-1">Tip:</span> No MIDI piano? You can also click the on-screen keys or use your computer keyboard.
+                  </p>
+                  {/* Tooltip arrow */}
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-8 border-transparent border-t-lyra-surface"></div>
+                </div>
+              </div>
+            )}
+          </div>
           {/* Piano keyboard - show 2 octaves on mobile, full on desktop */}
           <div className="md:hidden">
             <PianoKeyboard

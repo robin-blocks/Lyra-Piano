@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useState, useEffect } from 'react'
 
 export interface Suggestion {
   title: string
@@ -39,11 +39,15 @@ function pickRandom<T>(arr: T[], n: number): T[] {
 }
 
 export function PromptSuggestions({ suggestions, visible }: PromptSuggestionsProps) {
-  // Pick 3 random suggestions when there are more than 3
-  const displaySuggestions = useMemo(
-    () => pickRandom(suggestions, 3),
-    [suggestions]
+  // Start with first 3 for SSR consistency, then randomize on client
+  const [displaySuggestions, setDisplaySuggestions] = useState(() =>
+    suggestions.slice(0, 3)
   )
+
+  // Randomize on mount and when suggestions change
+  useEffect(() => {
+    setDisplaySuggestions(pickRandom(suggestions, 3))
+  }, [suggestions])
   return (
     <div
       className={`
