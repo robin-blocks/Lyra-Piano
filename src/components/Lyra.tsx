@@ -490,7 +490,7 @@ export function Lyra() {
         orbPosition={orbPosition}
       />
       {/* Header */}
-      <header className="w-full max-w-[496px] md:max-w-[1184px] flex items-center justify-start">
+      <header className="w-full max-w-[496px] md:max-w-[1184px] flex items-center justify-between">
         <nav>
           <button className="p-2 hover:bg-lyra-surface rounded-lg transition-colors">
             <svg
@@ -508,6 +508,32 @@ export function Lyra() {
             </svg>
           </button>
         </nav>
+
+        {/* Mock user account */}
+        <div className="flex items-center gap-3">
+          {/* Credits pill */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-lyra-surface/80 border border-lyra-accent/30 rounded-full">
+            <svg
+              className="w-4 h-4 text-lyra-orb-1"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <path d="M12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2Z" />
+            </svg>
+            <span className="text-sm font-medium text-lyra-text">300</span>
+          </div>
+
+          {/* User avatar */}
+          <div className="w-9 h-9 rounded-full bg-lyra-accent/50 border border-lyra-accent/30 flex items-center justify-center">
+            <svg
+              className="w-5 h-5 text-lyra-muted"
+              fill="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+            </svg>
+          </div>
+        </div>
       </header>
 
       {/* Main content */}
