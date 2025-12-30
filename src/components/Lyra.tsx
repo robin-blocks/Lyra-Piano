@@ -253,12 +253,13 @@ export function Lyra() {
               .filter(n => n.type === 'noteOn')
               .map(n => n.midiNote)
 
-            // Deduplicate for cleaner output if it's a chord
-            const uniquePlayed = type === 'chord'
-              ? Array.from(new Set(playedMidi))
+            // For chords: deduplicate and sort by pitch (low to high)
+            // For melodies: preserve play order
+            const processedMidi = type === 'chord'
+              ? Array.from(new Set(playedMidi)).sort((a, b) => a - b)
               : playedMidi
 
-            const noteNames = uniquePlayed.map(midiToNoteName)
+            const noteNames = processedMidi.map(midiToNoteName)
 
             result = JSON.stringify({
               playedNotes: noteNames,
@@ -439,15 +440,25 @@ export function Lyra() {
 
       const phrase = endMidiCapture()
       if (phrase && phrase.notes.length > 0) {
-        const playedMidi = phrase.notes
-          .filter(n => n.type === 'noteOn')
-          .map(n => n.midiNote)
+        const noteOnEvents = phrase.notes.filter(n => n.type === 'noteOn')
+
+        // Detect if this is a chord: all notes within 50ms of first note
+        const CHORD_THRESHOLD_MS = 50
+        const isChord = noteOnEvents.length > 1 &&
+          noteOnEvents.every(n =>
+            Math.abs(n.timestamp - noteOnEvents[0].timestamp) < CHORD_THRESHOLD_MS
+          )
+
+        let playedMidi = noteOnEvents.map(n => n.midiNote)
+
+        // Sort by pitch only for chords, preserve order for melodies
+        if (isChord) {
+          playedMidi.sort((a, b) => a - b)
+        }
 
         const noteNames = playedMidi.map(midiToNoteName)
-        console.log('[Passive] User played:', noteNames)
+        console.log('[Passive] User played:', noteNames, isChord ? '(chord)' : '(melody)')
 
-        // Validate "significance": ignore single accidental bumps? 
-        // Let's accept anything > 0 notes for now.
         lastPassiveNotesRef.current = noteNames
 
         // INJECT TRIGGER
