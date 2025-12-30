@@ -138,6 +138,8 @@ export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'di
 
 export interface ToolContext {
   queueAction: (callback: () => Promise<void>, description: string) => void
+  waitForQueueEmpty: () => Promise<void>
+  triggerAudio: (url: string) => Promise<void>
 }
 
 export type ToolHandler = (

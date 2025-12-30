@@ -4,38 +4,18 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { LyraOrb } from '@/components/LyraOrb'
 import { PianoKeyboard } from '@/components/Piano'
 import { usePiano } from '@/hooks/usePiano'
-import { useMidiCapture } from '@/hooks/useMidiCapture'
 import { useMidiInput } from '@/hooks/useMidiInput'
 import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
 import { getPianoAudio } from '@/lib/PianoAudio'
 import { DemoPlayer, playCustomSequence, type SequenceNote } from '@/lib/DemoPlayer'
-import { getPatternById, searchPatterns, PATTERNS, type ExpectedPattern, type PatternType } from '@/lib/patterns'
-import { evaluate } from '@/lib/MidiEvaluator'
+import { getPatternById, searchPatterns, PATTERNS } from '@/lib/patterns'
+import { NoteInjector } from '@/lib/noteInjector'
+import { preloadClips } from '@/lib/speechClips'
 import { Note } from 'tonal'
-import type { ToolHandler, ToolContext, ConnectionStatus } from '@/types/elevenlabs-websocket'
-
-// Helper to convert MIDI number to note name (e.g., 60 -> C4)
-// Helper to convert MIDI number to note name (e.g., 60 -> C4)
-// Returns both enharmonics for black keys to avoid AI confusion (e.g. "F#4 / Gb4")
-function midiToNoteName(midi: number): string {
-  const noteName = Note.fromMidi(midi)
-  if (!noteName) return 'Unknown'
-
-  if (noteName.includes('#')) {
-    const flat = Note.enharmonic(noteName)
-    if (flat && flat !== noteName) return `${noteName} / ${flat}`
-  } else if (noteName.includes('b')) {
-    const sharp = Note.enharmonic(noteName)
-    if (sharp && sharp !== noteName) return `${sharp} / ${noteName}`
-  }
-
-  return noteName
-}
+import type { ToolHandler } from '@/types/elevenlabs-websocket'
 
 // Environment variable for agent ID - will be set in .env.local
 const AGENT_ID = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID || ''
-
-type ListeningState = 'not_listening' | 'listening_for_piano' | 'processing'
 
 // Map WebSocket agent state to orb state
 type OrbAgentState = 'idle' | 'listening' | 'talking' | null
@@ -47,7 +27,6 @@ function mapAgentState(wsState: 'idle' | 'listening' | 'speaking' | null): OrbAg
 export function Lyra() {
   const [message, setMessage] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
-  const [listeningForPiano, setListeningForPiano] = useState<ListeningState>('not_listening')
 
   // Piano state and audio
   const {
@@ -58,14 +37,13 @@ export function Lyra() {
     highlightKeys,
     clearHighlights,
     isInitialized: pianoInitialized,
-    isLoading: pianoLoading,
   } = usePiano()
-
-  // MIDI capture for recording user playing
-  const midiCapture = useMidiCapture()
 
   // Demo player reference
   const demoPlayerRef = useRef<DemoPlayer | null>(null)
+
+  // Note injector for real-time MIDI-to-speech
+  const noteInjectorRef = useRef<NoteInjector | null>(null)
 
   // Initialize demo player when piano is ready
   useEffect(() => {
@@ -77,12 +55,6 @@ export function Lyra() {
       })
     }
   }, [pianoInitialized, highlightKeys, clearHighlights])
-
-  // Ref to store passively captured notes
-  const lastPassiveNotesRef = useRef<string[]>([])
-
-  // Track if we are in a manual tool call (blocking passive listener)
-  const isBlockingRef = useRef(false)
 
   // Helper to play a single note with highlighting
   const playNoteWithHighlight = async (
@@ -189,125 +161,6 @@ export function Lyra() {
       })
     },
 
-    // Listen for user playing.
-    // If expectedNotes are provided, evaluates against them.
-    // If not, returns the raw notes played for the Agent to evaluate.
-    listenAndEvaluate: async (params, { queueAction }) => {
-      const { expectedNotes, type = 'melody', timeLimitMs = 15000 } = params as {
-        expectedNotes?: string[],
-        type?: PatternType,
-        timeLimitMs?: number
-      }
-
-      console.log('Agent: Listening. Expected:', expectedNotes || '(Any)')
-
-      // Convert expected notes to MIDI if provided (validation happens immediately)
-      const expectedMidiNotes: number[] = []
-      if (expectedNotes) {
-        for (const noteName of expectedNotes) {
-          const midi = Note.midi(noteName)
-          if (midi !== null) expectedMidiNotes.push(midi)
-        }
-      }
-
-      // Return a promise that resolves when listening completes
-      return new Promise<string>((resolve) => {
-        // Queue the listening to start AFTER audio finishes
-        // This ensures user hears "Now you try!" and any chord demos first
-        queueAction(async () => {
-          isBlockingRef.current = true
-          setListeningForPiano('listening_for_piano')
-
-          let isResolved = false
-
-          const handleComplete = () => {
-            if (isResolved) return
-            isResolved = true
-
-            const phrase = midiCapture.endCapture()
-            setListeningForPiano('processing')
-
-            if (!phrase || phrase.notes.length === 0) {
-              setListeningForPiano('not_listening')
-              isBlockingRef.current = false
-              resolve(JSON.stringify({
-                error: 'No notes were captured',
-                feedback: 'I didn\'t hear any notes. Please try again.',
-                passed: false
-              }))
-              return
-            }
-
-            let result: string
-
-            // If we have expected notes, use the built-in evaluator
-            if (expectedMidiNotes.length > 0) {
-              const tempPattern: ExpectedPattern = {
-                id: 'temp-eval',
-                name: 'Current Lesson',
-                description: 'Dynamic pattern from agent',
-                notes: expectedMidiNotes,
-                type: type,
-                difficulty: 1
-              }
-              // Return full analysis object
-              result = JSON.stringify(evaluate(phrase, tempPattern))
-            }
-            // Otherwise, just return what was played
-            else {
-              const playedMidi = phrase.notes
-                .filter(n => n.type === 'noteOn')
-                .map(n => n.midiNote)
-
-              // For chords: deduplicate and sort by pitch (low to high)
-              // For melodies: preserve play order
-              const processedMidi = type === 'chord'
-                ? Array.from(new Set(playedMidi)).sort((a, b) => a - b)
-                : playedMidi
-
-              const noteNames = processedMidi.map(midiToNoteName)
-
-              result = JSON.stringify({
-                playedNotes: noteNames,
-                count: noteNames.length,
-                status: "success"
-              })
-            }
-
-            // Small delay before clearing state
-            setTimeout(() => {
-              setListeningForPiano('not_listening')
-              isBlockingRef.current = false
-            }, 500)
-
-            resolve(result)
-          }
-
-          // Start capture with silence callback
-          midiCapture.startCapture({ onPhraseEnd: handleComplete })
-
-          // Safety timeout
-          setTimeout(() => {
-            if (!isResolved) {
-              console.log('Time limit reached, finishing capture')
-              handleComplete()
-            }
-          }, timeLimitMs)
-        }, 'listenAndEvaluate: waiting for user input')
-      })
-    },
-
-    // Get the most recent notes played by the user (passive capture)
-    getRecentNotes: async () => {
-      console.log('Agent: Fetching recent notes')
-      const notes = lastPassiveNotesRef.current
-      return JSON.stringify({
-        playedNotes: notes,
-        count: notes.length,
-        status: "success"
-      })
-    },
-
     // Demonstrate a pattern on the piano
     demonstratePattern: async (params, { queueAction }) => {
       const { patternId } = params as { patternId: string }
@@ -402,7 +255,7 @@ export function Lyra() {
         noteCount: pattern.notes.length,
       })
     },
-  }), [highlightKeys, clearHighlights, midiCapture, playNoteWithHighlight])
+  }), [highlightKeys, clearHighlights, playNoteWithHighlight])
 
   // Use the custom WebSocket hook for interleaved audio/tool processing
   const {
@@ -412,7 +265,7 @@ export function Lyra() {
     agentState: wsAgentState,
     getInputVolume,
     getOutputVolume,
-    triggerAudio,
+    injectPCM,
   } = useAgentWebSocket({
     agentId: AGENT_ID,
     toolHandlers,
@@ -428,73 +281,26 @@ export function Lyra() {
     },
   })
 
-  // Destructure stable methods to avoid useEffect dependency cycles
-  const {
-    startCapture: startMidiCapture,
-    endCapture: endMidiCapture,
-    clearCapture: clearMidiCapture,
-    isCapturing
-  } = midiCapture
-
-  // Passive listening loop
+  // Initialize NoteInjector when connected
   useEffect(() => {
-    // If we are blocking (tool running) or not connected, don't passive listen
-    if (status !== 'connected' || listeningForPiano !== 'not_listening') return
+    if (status === 'connected') {
+      // Create the note injector with the injectPCM function
+      noteInjectorRef.current = new NoteInjector(injectPCM)
+      console.log('[Lyra] NoteInjector initialized')
 
-    // Callback when passive phrase is detected
-    const handlePassivePhrase = () => {
-      if (isBlockingRef.current) return
-
-      const phrase = endMidiCapture()
-      if (phrase && phrase.notes.length > 0) {
-        const noteOnEvents = phrase.notes.filter(n => n.type === 'noteOn')
-
-        // Detect if this is a chord: all notes within 50ms of first note
-        const CHORD_THRESHOLD_MS = 50
-        const isChord = noteOnEvents.length > 1 &&
-          noteOnEvents.every(n =>
-            Math.abs(n.timestamp - noteOnEvents[0].timestamp) < CHORD_THRESHOLD_MS
-          )
-
-        let playedMidi = noteOnEvents.map(n => n.midiNote)
-
-        // Sort by pitch only for chords, preserve order for melodies
-        if (isChord) {
-          playedMidi.sort((a, b) => a - b)
-        }
-
-        const noteNames = playedMidi.map(midiToNoteName)
-        console.log('[Passive] User played:', noteNames, isChord ? '(chord)' : '(melody)')
-
-        lastPassiveNotesRef.current = noteNames
-
-        // INJECT TRIGGER
-        triggerAudio('/piano_trigger.wav')
-      }
-
-      // Resume passive listening immediately
-      startPassive()
+      // Preload speech clips for faster response (full keyboard range)
+      preloadClips(2, 7).catch(err => {
+        console.warn('[Lyra] Failed to preload speech clips:', err)
+      })
     }
 
-    const startPassive = () => {
-      if (isBlockingRef.current) return
-      // Start capturing with our callback
-      startMidiCapture({ onPhraseEnd: handlePassivePhrase })
-    }
-
-    startPassive()
-
-    // Cleanup: clear capture when this effect invalidates (e.g. status change)
     return () => {
-      // We don't want to stop capture if we are just unmounting to remount
-      // But midiCapture is a hook... 
-      // We'll rely on the next render logic.
-      // Actually, we should probably stop capture if we disconnect
-      if (status !== 'connected') {
-        clearMidiCapture()
+      if (noteInjectorRef.current) {
+        noteInjectorRef.current.dispose()
+        noteInjectorRef.current = null
       }
     }
-  }, [status, listeningForPiano, startMidiCapture, endMidiCapture, clearMidiCapture, triggerAudio])
+  }, [status, injectPCM])
 
   // Map WebSocket agent state to orb-compatible state
   const agentState = mapAgentState(wsAgentState)
@@ -526,32 +332,21 @@ export function Lyra() {
   const handleDisconnect = useCallback(() => {
     disconnect()
     setMessage('')
-    setListeningForPiano('not_listening')
-    midiCapture.clearCapture()
-  }, [disconnect, midiCapture])
+    // NoteInjector cleanup happens in the useEffect
+  }, [disconnect])
 
-  // Enhanced note handlers that also capture for evaluation
+  // Note handlers - play sound and inject to agent via NoteInjector
   const handleNoteOn = useCallback((midiNote: number, velocity: number = 80) => {
     playNote(midiNote, velocity)
 
-    // Record to MIDI capture if we're listening
-    if (midiCapture.isCapturing) {
-      midiCapture.recordNoteEvent('noteOn', midiNote, velocity)
-    }
-  }, [playNote, midiCapture])
+    // Inject note to agent if connected
+    noteInjectorRef.current?.onNoteOn(midiNote)
+  }, [playNote])
 
   const handleNoteOff = useCallback((midiNote: number) => {
     stopNote(midiNote)
-
-    // Record to MIDI capture if we're listening
-    if (midiCapture.isCapturing) {
-      midiCapture.recordNoteEvent('noteOff', midiNote)
-    }
-  }, [stopNote, midiCapture])
-
-  // Handle "Done" button - tell the agent user finished playing
-  // Handle "Done" button - deprecated but kept for cleanup
-  // const handleDonePlaying = useCallback(() => { ... })
+    // NoteOff doesn't need to be sent to agent
+  }, [stopNote])
 
   // Handle sustain pedal
   const handleSustain = useCallback((active: boolean) => {
@@ -632,27 +427,6 @@ export function Lyra() {
             <div className="flex items-center justify-center gap-1 mb-2">
               <span className="w-2 h-2 bg-green-500 rounded-full"></span>
               <span className="text-xs text-lyra-muted">Connected to: {midiDevice.name}</span>
-            </div>
-          )}
-          {/* Listening for piano indicator */}
-          {listeningForPiano === 'listening_for_piano' && (
-            <div className="flex items-end justify-center gap-2 mb-2 animate-pulse">
-              <span className="relative flex h-3 w-3 mb-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-lyra-orb-1 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-lyra-orb-1"></span>
-              </span>
-              <p className="text-lyra-orb-1 text-sm font-medium">
-                Listening...
-              </p>
-            </div>
-          )}
-          {listeningForPiano === 'processing' && (
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <svg className="animate-spin h-4 w-4 text-lyra-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              <p className="text-lyra-muted text-sm">Evaluating your playing...</p>
             </div>
           )}
           {/* Piano keyboard - show 2 octaves on mobile, full on desktop */}

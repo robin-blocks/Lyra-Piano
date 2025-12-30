@@ -43,11 +43,15 @@ export function useAgentWebSocket({
   // Separate tool queue for immediate execution (avoids timeout)
   const toolQueueRef = useRef<ToolQueueItem[]>([])
   const isProcessingToolsRef = useRef(false)
+
+  // Queue empty promise resolver (for waitForQueueEmpty)
+  const queueEmptyResolversRef = useRef<Array<() => void>>([])
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioWorkletRef = useRef<AudioWorkletNode | null>(null)
   const micAudioContextRef = useRef<AudioContext | null>(null)
   const inputVolumeRef = useRef(0)
   const toolHandlersRef = useRef(toolHandlers)
+  const triggerAudioRef = useRef<((url: string) => Promise<void>) | null>(null)
 
   // Keep toolHandlers ref updated
   useEffect(() => {
@@ -108,6 +112,13 @@ export function useAgentWebSocket({
     }
 
     isProcessingRef.current = false
+
+    // Resolve any waitForQueueEmpty promises
+    if (queueEmptyResolversRef.current.length > 0) {
+      const resolvers = queueEmptyResolversRef.current
+      queueEmptyResolversRef.current = []
+      resolvers.forEach(resolve => resolve())
+    }
   }, [audioPlayer, status])
 
   /**
@@ -118,6 +129,22 @@ export function useAgentWebSocket({
     queueRef.current.push({ type: 'action', callback, description })
     processQueue()
   }, [processQueue])
+
+  /**
+   * Wait for the audio/action queue to be empty
+   * Useful for tools that need to wait for demos to finish before starting their work
+   */
+  const waitForQueueEmpty = useCallback((): Promise<void> => {
+    // If queue is already empty and not processing, resolve immediately
+    if (queueRef.current.length === 0 && !isProcessingRef.current) {
+      return Promise.resolve()
+    }
+
+    // Otherwise, add resolver to be called when queue empties
+    return new Promise<void>((resolve) => {
+      queueEmptyResolversRef.current.push(resolve)
+    })
+  }, [])
 
   /**
    * Process tool calls immediately (not queued behind audio)
@@ -140,8 +167,9 @@ export function useAgentWebSocket({
         let result: string
 
         if (handler) {
-          // Pass queueAction context so handlers can defer side-effects
-          const context: ToolContext = { queueAction }
+          // Pass context so handlers can defer side-effects or wait for queue
+          const triggerAudioFn = triggerAudioRef.current || (async () => {})
+          const context: ToolContext = { queueAction, waitForQueueEmpty, triggerAudio: triggerAudioFn }
           const handlerResult = await handler(item.parameters, context)
           result = typeof handlerResult === 'string' ? handlerResult : JSON.stringify(handlerResult)
         } else {
@@ -492,6 +520,43 @@ export function useAgentWebSocket({
     }
   }, [status])
 
+  /**
+   * Inject raw PCM audio data into the stream
+   * Used by NoteInjector to send speech clips
+   */
+  const injectPCM = useCallback(async (pcmData: Int16Array) => {
+    if (status !== 'connected' || !wsRef.current) return
+
+    try {
+      // Send in chunks to avoid message size limits
+      const CHUNK_SIZE = 4096 // 4KB chunks
+      for (let i = 0; i < pcmData.length; i += CHUNK_SIZE) {
+        const chunk = pcmData.slice(i, i + CHUNK_SIZE)
+        const base64 = btoa(
+          String.fromCharCode(...new Uint8Array(chunk.buffer))
+        )
+
+        wsRef.current.send(JSON.stringify({
+          user_audio_chunk: base64
+        }))
+
+        // Small delay to prevent flooding
+        if (i + CHUNK_SIZE < pcmData.length) {
+          await new Promise(r => setTimeout(r, 5))
+        }
+      }
+
+      console.log('[Audio] Injected PCM:', pcmData.length, 'samples')
+    } catch (err) {
+      console.error('Failed to inject PCM:', err)
+    }
+  }, [status])
+
+  // Keep triggerAudio ref updated for use in tool context
+  useEffect(() => {
+    triggerAudioRef.current = triggerAudio
+  }, [triggerAudio])
+
   // Memoize return object to avoid infinite loops in consumers
   return useMemo(() => ({
     connect,
@@ -500,7 +565,8 @@ export function useAgentWebSocket({
     agentState,
     getInputVolume,
     getOutputVolume,
-    triggerAudio
+    triggerAudio,
+    injectPCM,
   }), [
     connect,
     disconnect,
@@ -508,7 +574,8 @@ export function useAgentWebSocket({
     agentState,
     getInputVolume,
     getOutputVolume,
-    triggerAudio
+    triggerAudio,
+    injectPCM,
   ])
 }
 
