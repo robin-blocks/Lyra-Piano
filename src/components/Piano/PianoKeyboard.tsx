@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { cn } from '@/lib/utils'
 
 // Piano key configuration
@@ -77,7 +77,12 @@ interface PianoKeyboardProps {
   endNote?: number
 }
 
-export function PianoKeyboard({
+export interface PianoKeyboardHandle {
+  /** Get the screen position of a key's top center for particle effects */
+  getKeyPosition: (midiNote: number) => { x: number; y: number } | null
+}
+
+export const PianoKeyboard = forwardRef<PianoKeyboardHandle, PianoKeyboardProps>(function PianoKeyboard({
   pressedKeys = new Set(),
   highlightedKeys = new Set(),
   onNoteOn,
@@ -85,8 +90,9 @@ export function PianoKeyboard({
   className,
   startNote = FIRST_MIDI_NOTE,
   endNote = LAST_MIDI_NOTE,
-}: PianoKeyboardProps) {
+}: PianoKeyboardProps, ref) {
   const activeNotesRef = useRef<Set<number>>(new Set())
+  const containerRef = useRef<HTMLDivElement>(null)
 
   // Filter keys to display range
   const displayKeys = ALL_KEYS.filter(
@@ -99,6 +105,35 @@ export function PianoKeyboard({
   const firstWhiteKey = displayWhiteKeys[0]
   const xOffset = firstWhiteKey ? firstWhiteKey.xPosition : 0
   const displayWidth = displayWhiteKeys.length * WHITE_KEY_WIDTH
+
+  // Expose getKeyPosition method via ref for particle effects
+  useImperativeHandle(ref, () => ({
+    getKeyPosition: (midiNote: number) => {
+      const container = containerRef.current
+      if (!container) return null
+
+      const key = displayKeys.find(k => k.midiNote === midiNote)
+      if (!key) return null
+
+      const rect = container.getBoundingClientRect()
+      const svg = container.querySelector('svg')
+      if (!svg) return null
+
+      const svgRect = svg.getBoundingClientRect()
+
+      // Calculate the scale factor (SVG viewBox to screen)
+      const scale = svgRect.width / displayWidth
+
+      // Key center X in screen coordinates
+      const keyWidth = key.isBlack ? BLACK_KEY_WIDTH : WHITE_KEY_WIDTH
+      const keyCenterX = (key.xPosition - xOffset + keyWidth / 2) * scale + svgRect.left
+
+      // Top of the key (Y = 0 in SVG)
+      const keyTopY = svgRect.top
+
+      return { x: keyCenterX, y: keyTopY }
+    }
+  }), [displayKeys, displayWidth, xOffset])
 
   // Handle note on
   const handleNoteOn = useCallback(
@@ -161,7 +196,7 @@ export function PianoKeyboard({
   }
 
   return (
-    <div className={cn('w-full overflow-x-auto', className)}>
+    <div ref={containerRef} className={cn('w-full overflow-x-auto', className)}>
       <svg
         viewBox={`0 0 ${displayWidth} ${WHITE_KEY_HEIGHT}`}
         className="w-full h-auto min-h-[100px] max-h-[160px]"
@@ -301,7 +336,7 @@ export function PianoKeyboard({
       </svg>
     </div>
   )
-}
+})
 
 export default PianoKeyboard
 

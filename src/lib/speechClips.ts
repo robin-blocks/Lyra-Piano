@@ -133,10 +133,10 @@ export function midiToClipName(midi: number): string {
 }
 
 /**
- * Preload all clips for a given octave range.
+ * Preload all clips for the full 88-key piano range (A0 to C8).
  * Call this on app init for faster response times.
  */
-export async function preloadClips(startOctave: number = 2, endOctave: number = 7): Promise<void> {
+export async function preloadClips(): Promise<void> {
   const clipNames: string[] = ['chord']
 
   const noteNames = [
@@ -144,11 +144,18 @@ export async function preloadClips(startOctave: number = 2, endOctave: number = 
     'f-sharp', 'g', 'g-sharp', 'a', 'a-sharp', 'b'
   ]
 
-  for (let octave = startOctave; octave <= endOctave; octave++) {
+  // Octave 0: Only A, A#, B (piano starts at A0)
+  clipNames.push('a0', 'a-sharp0', 'b0')
+
+  // Octaves 1-7: All 12 notes
+  for (let octave = 1; octave <= 7; octave++) {
     for (const note of noteNames) {
       clipNames.push(`${note}${octave}`)
     }
   }
+
+  // Octave 8: Only C (piano ends at C8)
+  clipNames.push('c8')
 
   // Load all in parallel
   await Promise.all(clipNames.map(name => loadClip(name).catch(err => {

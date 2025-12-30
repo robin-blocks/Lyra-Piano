@@ -1,5 +1,7 @@
 'use client'
 
+import { useMemo } from 'react'
+
 export interface Suggestion {
   title: string
   prompt: string
@@ -23,9 +25,25 @@ export const DEFAULT_SUGGESTIONS: Suggestion[] = [
     title: 'Teach me a Song',
     prompt: 'Teach me how to play a simple song',
   },
+  {
+    title: 'What Chord is This?',
+    prompt: 'What chord is this?',
+  },
 ]
 
+// Randomly pick n items from an array
+function pickRandom<T>(arr: T[], n: number): T[] {
+  if (arr.length <= n) return arr
+  const shuffled = [...arr].sort(() => Math.random() - 0.5)
+  return shuffled.slice(0, n)
+}
+
 export function PromptSuggestions({ suggestions, visible }: PromptSuggestionsProps) {
+  // Pick 3 random suggestions when there are more than 3
+  const displaySuggestions = useMemo(
+    () => pickRandom(suggestions, 3),
+    [suggestions]
+  )
   return (
     <div
       className={`
@@ -34,7 +52,7 @@ export function PromptSuggestions({ suggestions, visible }: PromptSuggestionsPro
         ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'}
       `}
     >
-      {suggestions.map((suggestion, index) => (
+      {displaySuggestions.map((suggestion, index) => (
         <div
           key={index}
           className="

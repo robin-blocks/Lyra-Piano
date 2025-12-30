@@ -2,8 +2,9 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { LyraOrb } from '@/components/LyraOrb'
-import { PianoKeyboard } from '@/components/Piano'
+import { PianoKeyboard, type PianoKeyboardHandle } from '@/components/Piano'
 import { PromptSuggestions, DEFAULT_SUGGESTIONS, type Suggestion } from '@/components/PromptSuggestions'
+import { ParticleCanvas } from '@/components/ParticleCanvas'
 import { usePiano } from '@/hooks/usePiano'
 import { useMidiInput } from '@/hooks/useMidiInput'
 import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
@@ -36,6 +37,12 @@ export function Lyra() {
   const hasInteractedRef = useRef(false)
   const turnCountRef = useRef(0)
   const lastTurnCountRef = useRef(0)
+
+  // Particle effect refs
+  const pianoRefMobile = useRef<PianoKeyboardHandle>(null)
+  const pianoRefDesktop = useRef<PianoKeyboardHandle>(null)
+  const orbContainerRef = useRef<HTMLDivElement>(null)
+  const [orbPosition, setOrbPosition] = useState<{ x: number; y: number; radius: number } | null>(null)
 
   // Piano state and audio
   const {
@@ -312,7 +319,7 @@ export function Lyra() {
       console.log('[Lyra] NoteInjector initialized')
 
       // Preload speech clips for faster response (full keyboard range)
-      preloadClips(2, 7).catch(err => {
+      preloadClips().catch(err => {
         console.warn('[Lyra] Failed to preload speech clips:', err)
       })
     }
@@ -390,6 +397,38 @@ export function Lyra() {
     }
   }, [error])
 
+  // Update orb position for particle effects
+  useEffect(() => {
+    const updateOrbPosition = () => {
+      const container = orbContainerRef.current
+      if (!container) return
+
+      const rect = container.getBoundingClientRect()
+      setOrbPosition({
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+        radius: Math.min(rect.width, rect.height) / 2,
+      })
+    }
+
+    updateOrbPosition()
+    window.addEventListener('resize', updateOrbPosition)
+    window.addEventListener('scroll', updateOrbPosition)
+
+    return () => {
+      window.removeEventListener('resize', updateOrbPosition)
+      window.removeEventListener('scroll', updateOrbPosition)
+    }
+  }, [])
+
+  // Get key position from the appropriate piano keyboard (mobile or desktop)
+  const getKeyPosition = useCallback((midiNote: number) => {
+    // Check if we're on mobile or desktop based on window width
+    const isMobile = window.innerWidth < 768 // md breakpoint
+    const pianoRef = isMobile ? pianoRefMobile : pianoRefDesktop
+    return pianoRef.current?.getKeyPosition(midiNote) ?? null
+  }, [])
+
   const handleConnect = useCallback(async () => {
     if (!AGENT_ID) {
       setError('Agent ID not configured. Please set NEXT_PUBLIC_ELEVENLABS_AGENT_ID in .env.local')
@@ -444,6 +483,12 @@ export function Lyra() {
 
   return (
     <div className="flex-1 flex flex-col items-center justify-between py-8 px-4">
+      {/* Particle effect canvas */}
+      <ParticleCanvas
+        pressedKeys={pressedKeys}
+        getKeyPosition={getKeyPosition}
+        orbPosition={orbPosition}
+      />
       {/* Header */}
       <header className="w-full max-w-[496px] md:max-w-[1184px] flex items-center justify-start">
         <nav>
@@ -485,15 +530,17 @@ export function Lyra() {
         )}
 
         {/* Orb */}
-        <LyraOrb
-          status={status}
-          agentState={agentState}
-          onConnect={handleConnect}
-          onDisconnect={handleDisconnect}
-          getInputVolume={getInputVolume}
-          getOutputVolume={getOutputVolume}
-          message={message}
-        />
+        <div ref={orbContainerRef}>
+          <LyraOrb
+            status={status}
+            agentState={agentState}
+            onConnect={handleConnect}
+            onDisconnect={handleDisconnect}
+            getInputVolume={getInputVolume}
+            getOutputVolume={getOutputVolume}
+            message={message}
+          />
+        </div>
 
         {/* Prompt Suggestions */}
         <PromptSuggestions
@@ -515,6 +562,7 @@ export function Lyra() {
           {/* Piano keyboard - show 2 octaves on mobile, full on desktop */}
           <div className="md:hidden">
             <PianoKeyboard
+              ref={pianoRefMobile}
               pressedKeys={pressedKeys}
               highlightedKeys={highlightedKeys}
               onNoteOn={handleNoteOn}
@@ -525,6 +573,7 @@ export function Lyra() {
           </div>
           <div className="hidden md:block">
             <PianoKeyboard
+              ref={pianoRefDesktop}
               pressedKeys={pressedKeys}
               highlightedKeys={highlightedKeys}
               onNoteOn={handleNoteOn}
