@@ -234,6 +234,32 @@ export function PianoKeyboard({
           )
         })}
 
+        {/* Full key highlight overlays */}
+        {displayKeys.map((key) => {
+          const isPressed = pressedKeys.has(key.midiNote)
+          const isHighlighted = highlightedKeys.has(key.midiNote)
+
+          if (!isPressed && !isHighlighted) return null
+
+          const isUser = isPressed
+          const overlayColor = isUser
+            ? 'rgba(224, 90, 0, 0.15)'
+            : 'rgba(75, 75, 94, 0.25)'
+
+          return (
+            <rect
+              key={`overlay-${key.midiNote}`}
+              x={key.xPosition - xOffset}
+              y={0}
+              width={key.isBlack ? BLACK_KEY_WIDTH : WHITE_KEY_WIDTH - 1}
+              height={key.isBlack ? BLACK_KEY_HEIGHT : WHITE_KEY_HEIGHT}
+              rx={key.isBlack ? 2 : 3}
+              fill={overlayColor}
+              style={{ pointerEvents: 'none' }}
+            />
+          )
+        })}
+
         {/* Indicators (render on top of everything) */}
         {displayKeys.map((key) => {
           const isPressed = pressedKeys.has(key.midiNote)

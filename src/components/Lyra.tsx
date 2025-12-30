@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { LyraOrb } from '@/components/LyraOrb'
 import { PianoKeyboard } from '@/components/Piano'
+import { PromptSuggestions, DEFAULT_SUGGESTIONS, type Suggestion } from '@/components/PromptSuggestions'
 import { usePiano } from '@/hooks/usePiano'
 import { useMidiInput } from '@/hooks/useMidiInput'
 import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
@@ -27,6 +28,14 @@ function mapAgentState(wsState: 'idle' | 'listening' | 'speaking' | null): OrbAg
 export function Lyra() {
   const [message, setMessage] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
+
+  // Prompt suggestions state
+  const [suggestions, setSuggestions] = useState<Suggestion[]>(DEFAULT_SUGGESTIONS)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const conversationContextRef = useRef<string[]>([])
+  const hasInteractedRef = useRef(false)
+  const turnCountRef = useRef(0)
+  const lastTurnCountRef = useRef(0)
 
   // Piano state and audio
   const {
@@ -271,9 +280,23 @@ export function Lyra() {
     toolHandlers,
     onUserTranscript: (transcript) => {
       console.log('User transcript:', transcript)
+      // Track conversation for contextual suggestions
+      conversationContextRef.current.push(`User: ${transcript}`)
+      // Hide suggestions when user starts prompting
+      if (!hasInteractedRef.current) {
+        hasInteractedRef.current = true
+      }
+      setShowSuggestions(false)
+      turnCountRef.current += 1
     },
     onAgentResponse: (response) => {
       console.log('Agent response:', response)
+      // Track conversation for contextual suggestions
+      conversationContextRef.current.push(`Lyra: ${response}`)
+      // Count agent turn (for tracking complete exchanges)
+      if (hasInteractedRef.current) {
+        turnCountRef.current += 1
+      }
     },
     onError: (err) => {
       console.error('WebSocket error:', err)
@@ -304,6 +327,60 @@ export function Lyra() {
 
   // Map WebSocket agent state to orb-compatible state
   const agentState = mapAgentState(wsAgentState)
+
+  // Fetch contextual suggestions from Gemini
+  const fetchSuggestions = useCallback(async () => {
+    if (conversationContextRef.current.length < 2) return // Need some context first
+
+    try {
+      const response = await fetch('/api/suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationContext: conversationContextRef.current }),
+      })
+
+      if (!response.ok) {
+        console.warn('[Lyra] Failed to fetch suggestions:', response.status)
+        return
+      }
+
+      const data = await response.json()
+      if (data.suggestions && Array.isArray(data.suggestions)) {
+        setSuggestions(data.suggestions)
+      }
+    } catch (err) {
+      console.warn('[Lyra] Error fetching suggestions:', err)
+    }
+  }, [])
+
+  // Show suggestions when first connected
+  useEffect(() => {
+    if (status === 'connected' && !hasInteractedRef.current) {
+      // Small delay after connection for agent greeting
+      const timer = setTimeout(() => {
+        setShowSuggestions(true)
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [status])
+
+  // Control suggestion visibility based on conversation flow
+  // Show suggestions again after a complete exchange (user spoke + agent responded)
+  useEffect(() => {
+    if (agentState === 'idle' && hasInteractedRef.current) {
+      // Check if we've had a complete exchange since last time
+      if (turnCountRef.current >= 2 && turnCountRef.current > lastTurnCountRef.current) {
+        lastTurnCountRef.current = turnCountRef.current
+        // Small delay to let conversation settle
+        const timer = setTimeout(() => {
+          setShowSuggestions(true)
+          // Fetch new contextual suggestions
+          fetchSuggestions()
+        }, 1500)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [agentState, fetchSuggestions])
 
   // Clear error after 5 seconds
   useEffect(() => {
@@ -416,6 +493,12 @@ export function Lyra() {
           getInputVolume={getInputVolume}
           getOutputVolume={getOutputVolume}
           message={message}
+        />
+
+        {/* Prompt Suggestions */}
+        <PromptSuggestions
+          suggestions={suggestions}
+          visible={showSuggestions}
         />
       </main>
 

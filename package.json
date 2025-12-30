@@ -20,6 +20,7 @@
   "license": "MIT",
   "dependencies": {
     "@elevenlabs/react": "^0.12.3",
+    "@google/generative-ai": "^0.24.1",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.4.2",
     "@tailwindcss/postcss": "^4.1.18",
