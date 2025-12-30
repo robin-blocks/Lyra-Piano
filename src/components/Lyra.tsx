@@ -512,26 +512,44 @@ export function Lyra() {
         {/* Mock user account */}
         <div className="flex items-center gap-3">
           {/* Credits pill */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-lyra-surface/80 border border-lyra-accent/30 rounded-full">
-            <svg
-              className="w-4 h-4 text-lyra-orb-1"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path d="M12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2Z" />
-            </svg>
-            <span className="text-sm font-medium text-lyra-text">300</span>
+          <div className="relative group/credits">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-lyra-surface/80 border border-lyra-accent/30 rounded-full cursor-default">
+              <svg
+                className="w-4 h-4 text-lyra-orb-1"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2Z" />
+              </svg>
+              <span className="text-sm font-medium text-lyra-text">300</span>
+            </div>
+            {/* Tooltip */}
+            <div className="absolute top-full right-0 mt-2 w-48 p-2.5 bg-lyra-surface border border-lyra-accent/30 rounded-lg shadow-lg opacity-0 invisible group-hover/credits:opacity-100 group-hover/credits:visible transition-all duration-200 z-20">
+              <p className="text-xs text-lyra-muted">
+                <span className="text-lyra-orb-1 font-medium">Credits</span> — Earn and spend credits on lessons. Coming soon!
+              </p>
+              <div className="absolute bottom-full right-4 border-8 border-transparent border-b-lyra-surface"></div>
+            </div>
           </div>
 
           {/* User avatar */}
-          <div className="w-9 h-9 rounded-full bg-lyra-accent/50 border border-lyra-accent/30 flex items-center justify-center">
-            <svg
-              className="w-5 h-5 text-lyra-muted"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-            </svg>
+          <div className="relative group/avatar">
+            <div className="w-9 h-9 rounded-full bg-lyra-accent/50 border border-lyra-accent/30 flex items-center justify-center cursor-default">
+              <svg
+                className="w-5 h-5 text-lyra-muted"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+              </svg>
+            </div>
+            {/* Tooltip */}
+            <div className="absolute top-full right-0 mt-2 w-48 p-2.5 bg-lyra-surface border border-lyra-accent/30 rounded-lg shadow-lg opacity-0 invisible group-hover/avatar:opacity-100 group-hover/avatar:visible transition-all duration-200 z-20">
+              <p className="text-xs text-lyra-muted">
+                <span className="text-lyra-orb-1 font-medium">Account</span> — Sign in to track your progress. Coming soon!
+              </p>
+              <div className="absolute bottom-full right-2 border-8 border-transparent border-b-lyra-surface"></div>
+            </div>
           </div>
         </div>
       </header>
