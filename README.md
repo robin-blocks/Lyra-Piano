@@ -208,12 +208,25 @@ lyra/
 
 ## Roadmap
 
-- [x] Phase 1: Voice Agent MVP with Orb UI
-- [x] Phase 2: Piano Keyboard + Audio
-- [x] Phase 3: MIDI Capture + Hardware Input
-- [x] Phase 4: Agent Tools (playNote, playSequence)
-- [ ] Phase 5: User Playing Analysis & Feedback
-- [ ] Phase 6: Full Lesson Loop with Evaluation
+### Phase 1: Core Experience (Complete)
+- [x] Voice-first AI piano teacher powered by ElevenLabs + Google Gemini
+- [x] Interactive piano keyboard with high-quality audio (SplendidGrandPiano)
+- [x] Hardware MIDI keyboard support with auto-detection
+- [x] Real-time MIDI-to-speech injection (agent hears what you play)
+- [x] Agent tools for demonstrating notes, chords, and sequences
+- [x] Animated orb UI with particle effects
+- [x] Contextual lesson suggestions powered by Gemini
+
+### Phase 2: Accounts & Persistence (Planned)
+- [ ] User authentication and profiles
+- [ ] Persistent lesson history and progress tracking
+- [ ] Personalized learning — agent remembers your piano journey
+- [ ] Credits system for lessons
+
+### Phase 3: Museverse Integration (Planned)
+- [ ] Integration with [Museverse](https://www.museverse.xyz) VR piano app on Meta Quest
+- [ ] Cross-platform lesson sync between web and VR
+- [ ] Future wearables support
 
 ## Hackathon Submission
 
@@ -235,5 +248,5 @@ This project is submitted to the **ElevenLabs Challenge** of the Google Cloud AI
 - [ElevenLabs](https://elevenlabs.io) for the Conversational AI platform
 - [Google Cloud](https://cloud.google.com) for Gemini and hosting
 - [smplr](https://github.com/danigb/smplr) for the SplendidGrandPiano sampler
-- [Tonal](https://github.com/tonaljs/tonal) for music theory utilities
+- [Tonal](https://github.com/tonaljs/tonal) for note name to MIDI conversion
 - [JamieOnKeys](https://www.jamieonkeys.dev) for piano keyboard inspiration

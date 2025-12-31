@@ -29,6 +29,7 @@ function mapAgentState(wsState: 'idle' | 'listening' | 'speaking' | null): OrbAg
 export function Lyra() {
   const [message, setMessage] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   // Prompt suggestions state
   const [suggestions, setSuggestions] = useState<Suggestion[]>(DEFAULT_SUGGESTIONS)
@@ -491,8 +492,12 @@ export function Lyra() {
       />
       {/* Header */}
       <header className="w-full max-w-[496px] md:max-w-[1184px] flex items-center justify-between">
-        <nav>
-          <button className="p-2 hover:bg-lyra-surface rounded-lg transition-colors">
+        <nav className="relative">
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
+            className="p-2 hover:bg-lyra-surface rounded-lg transition-colors"
+          >
             <svg
               className="w-6 h-6 text-lyra-muted"
               fill="none"
@@ -507,6 +512,23 @@ export function Lyra() {
               />
             </svg>
           </button>
+
+          {/* Dropdown menu */}
+          {menuOpen && (
+            <div className="absolute top-full left-0 mt-1 w-48 py-2 bg-lyra-surface border border-lyra-accent/30 rounded-lg shadow-lg z-20">
+              <a
+                href="https://www.museverse.xyz"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-4 py-2.5 text-sm text-lyra-muted hover:text-lyra-text hover:bg-lyra-accent/20 transition-colors"
+              >
+                <span>About Museverse</span>
+                <svg className="w-3.5 h-3.5 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
+            </div>
+          )}
         </nav>
 
         {/* Mock user account */}
