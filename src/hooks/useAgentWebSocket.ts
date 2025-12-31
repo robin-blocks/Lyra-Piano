@@ -371,7 +371,7 @@ export function useAgentWebSocket({
   /**
    * Connect to the agent
    */
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (options?: { firstMessage?: string }) => {
     if (status !== 'disconnected') {
       console.warn('Already connected or connecting')
       return
@@ -394,6 +394,20 @@ export function useAgentWebSocket({
 
       ws.onopen = () => {
         console.log('[WS] Connected')
+
+        // Send conversation initiation data if firstMessage override is provided
+        if (options?.firstMessage) {
+          ws.send(JSON.stringify({
+            type: 'conversation_initiation_client_data',
+            conversation_config_override: {
+              agent: {
+                first_message: options.firstMessage
+              }
+            }
+          }))
+          console.log('[WS] Sent first_message override:', options.firstMessage)
+        }
+
         setStatus('connected')
         setAgentState('listening')
 

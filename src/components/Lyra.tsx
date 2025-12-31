@@ -430,28 +430,6 @@ export function Lyra() {
     return pianoRef.current?.getKeyPosition(midiNote) ?? null
   }, [])
 
-  const handleConnect = useCallback(async () => {
-    if (!AGENT_ID) {
-      setError('Agent ID not configured. Please set NEXT_PUBLIC_ELEVENLABS_AGENT_ID in .env.local')
-      return
-    }
-
-    try {
-      setMessage('Connecting...')
-      await connect()
-      setMessage("Hello! I'm ready to play.")
-    } catch (err) {
-      console.error('Failed to connect:', err)
-      setError('Failed to connect. Please check your configuration.')
-    }
-  }, [connect])
-
-  const handleDisconnect = useCallback(() => {
-    disconnect()
-    setMessage('')
-    // NoteInjector cleanup happens in the useEffect
-  }, [disconnect])
-
   // Note handlers - play sound and inject to agent via NoteInjector
   const handleNoteOn = useCallback((midiNote: number, velocity: number = 80) => {
     playNote(midiNote, velocity)
@@ -471,7 +449,7 @@ export function Lyra() {
     pianoAudio.setSustain(active)
   }, [])
 
-  // Hardware MIDI input
+  // Hardware MIDI input (must be before handleConnect which uses midiDevice)
   const {
     connectedDevice: midiDevice,
     isSupported: midiSupported,
@@ -481,6 +459,38 @@ export function Lyra() {
     onSustain: handleSustain,
     autoConnect: true,
   })
+
+  const handleConnect = useCallback(async () => {
+    if (!AGENT_ID) {
+      setError('Agent ID not configured. Please set NEXT_PUBLIC_ELEVENLABS_AGENT_ID in .env.local')
+      return
+    }
+
+    try {
+      setMessage('Connecting...')
+
+      // Build conditional first message based on MIDI connection status
+      const midiConnected = !!midiDevice
+      const firstMessage = midiConnected
+        ? "Hi! I'm Lyra, your AI piano teacher. What would you like to learn today?"
+        : "Hi! I'm Lyra, your AI piano teacher. I notice you don't have a MIDI piano connected. " +
+          "You can click the on-screen keys to play, but for the best experience, " +
+          "connect a MIDI keyboard using the instructions above the piano. " +
+          "What would you like to learn today?"
+
+      await connect({ firstMessage })
+      setMessage("Hello! I'm ready to play.")
+    } catch (err) {
+      console.error('Failed to connect:', err)
+      setError('Failed to connect. Please check your configuration.')
+    }
+  }, [connect, midiDevice])
+
+  const handleDisconnect = useCallback(() => {
+    disconnect()
+    setMessage('')
+    // NoteInjector cleanup happens in the useEffect
+  }, [disconnect])
 
   return (
     <div className="flex-1 flex flex-col items-center justify-between py-8 px-4">

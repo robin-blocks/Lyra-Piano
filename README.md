@@ -1,4 +1,4 @@
-# Lyra - AI Piano Teacher
+# Lyra - Conversational AI Piano Teacher
 
 > Your AI music teacher built with ElevenLabs and Google Cloud. Learn piano through natural conversation.
 
