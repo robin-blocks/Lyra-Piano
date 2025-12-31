@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { cn } from '@/lib/utils'
+import { MIDI_TO_KEY } from '@/hooks/useMusicalTyping'
 
 // Piano key configuration
 const WHITE_KEY_WIDTH = 24
@@ -75,6 +76,8 @@ interface PianoKeyboardProps {
   startNote?: number
   /** Ending MIDI note to display (for smaller displays) */
   endNote?: number
+  /** Show keyboard typing hints on keys (for musical typing) */
+  showKeyboardHints?: boolean
 }
 
 export interface PianoKeyboardHandle {
@@ -90,6 +93,7 @@ export const PianoKeyboard = forwardRef<PianoKeyboardHandle, PianoKeyboardProps>
   className,
   startNote = FIRST_MIDI_NOTE,
   endNote = LAST_MIDI_NOTE,
+  showKeyboardHints = false,
 }: PianoKeyboardProps, ref) {
   const activeNotesRef = useRef<Set<number>>(new Set())
   const containerRef = useRef<HTMLDivElement>(null)
@@ -331,6 +335,51 @@ export const PianoKeyboard = forwardRef<PianoKeyboardHandle, PianoKeyboardProps>
               strokeWidth={2}
               style={{ pointerEvents: 'none' }}
             />
+          )
+        })}
+
+        {/* Keyboard typing hints */}
+        {showKeyboardHints && displayKeys.map((key) => {
+          const keyLabel = MIDI_TO_KEY[key.midiNote]
+          if (!keyLabel) return null
+
+          // Center X of the key
+          const width = key.isBlack ? BLACK_KEY_WIDTH : WHITE_KEY_WIDTH
+          const cx = (key.xPosition - xOffset) + width / 2
+
+          // Dimensions for the key cap background
+          const boxWidth = 11
+          const boxHeight = 13
+          const bottomPadding = 5
+
+          // Position: near bottom edge of keys with consistent padding
+          const keyHeight = key.isBlack ? BLACK_KEY_HEIGHT : WHITE_KEY_HEIGHT
+          const cy = keyHeight - bottomPadding - boxHeight / 2
+
+          return (
+            <g key={`hint-${key.midiNote}`} style={{ pointerEvents: 'none' }}>
+              {/* Rounded rectangle background (keyboard key cap) */}
+              <rect
+                x={cx - boxWidth / 2}
+                y={cy - boxHeight / 2}
+                width={boxWidth}
+                height={boxHeight}
+                rx={2}
+                fill={key.isBlack ? 'rgba(255,255,255,0.075)' : 'rgba(0,0,0,0.04)'}
+              />
+              {/* Letter */}
+              <text
+                x={cx}
+                y={cy + 3.5}
+                textAnchor="middle"
+                fontSize={9}
+                fontFamily="system-ui, -apple-system, sans-serif"
+                fontWeight={500}
+                fill={key.isBlack ? 'rgba(255,255,255,0.5)' : 'rgba(80,80,100,0.5)'}
+              >
+                {keyLabel.toUpperCase()}
+              </text>
+            </g>
           )
         })}
       </svg>

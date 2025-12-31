@@ -12,6 +12,8 @@ export class PianoAudio {
   private isInitialized: boolean = false
   private isLoading: boolean = false
   private loadPromise: Promise<void> | null = null
+  private onAudioBlockedCallback: (() => void) | null = null
+  private audioWasBlocked: boolean = false
 
   /**
    * Initialize the audio context and piano sampler
@@ -60,9 +62,19 @@ export class PianoAudio {
       // Create audio context
       this.audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
 
-      // Resume immediately
+      // Try to resume immediately (don't await - it may never resolve without user gesture)
       if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume()
+        // Start resume attempt but don't await - check state after a short delay
+        this.audioContext.resume().catch(() => {
+          // Ignore errors - we'll check state below
+        })
+
+        // Give browser a moment to change state, then check
+        await new Promise(resolve => setTimeout(resolve, 100))
+
+        if (this.audioContext.state === 'suspended') {
+          this.notifyAudioBlocked()
+        }
       }
 
       // Generate array of common notes to preload (C3 to C6 = MIDI 48 to 84)
@@ -85,6 +97,10 @@ export class PianoAudio {
 
       this.isInitialized = true
       this.isLoading = false
+      // Clear blocked flag if audio context is now running
+      if (this.audioContext.state === 'running') {
+        this.audioWasBlocked = false
+      }
       console.log('PianoAudio initialized successfully with preloaded samples')
     } catch (error) {
       this.isLoading = false
@@ -98,7 +114,11 @@ export class PianoAudio {
    */
   resume(): void {
     if (this.audioContext?.state === 'suspended') {
-      this.audioContext.resume()
+      this.audioContext.resume().then(() => {
+        if (this.audioContext?.state === 'running') {
+          this.audioWasBlocked = false
+        }
+      })
     }
   }
 
@@ -112,6 +132,10 @@ export class PianoAudio {
     // Resume context if needed
     if (this.audioContext?.state === 'suspended') {
       await this.audioContext.resume()
+    }
+    // Clear blocked flag if now running
+    if (this.audioContext?.state === 'running') {
+      this.audioWasBlocked = false
     }
   }
 
@@ -150,7 +174,10 @@ export class PianoAudio {
     if (this.audioContext?.state === 'suspended') {
       this.audioContext.resume().catch(() => {
         console.warn('Could not resume AudioContext - needs user gesture')
+        this.notifyAudioBlocked()
       })
+      // Also notify immediately since resume likely won't work without gesture
+      this.notifyAudioBlocked()
     }
 
     // Remove from sustained notes if replaying
@@ -212,6 +239,35 @@ export class PianoAudio {
    */
   get initialized(): boolean {
     return this.isInitialized
+  }
+
+  /**
+   * Check if audio context is suspended (needs user gesture)
+   */
+  get needsUserGesture(): boolean {
+    return this.audioContext?.state === 'suspended'
+  }
+
+  /**
+   * Set callback for when audio is blocked by autoplay policy
+   * If audio was already blocked before callback was set, calls immediately
+   */
+  setOnAudioBlocked(callback: (() => void) | null): void {
+    this.onAudioBlockedCallback = callback
+    // If audio was already blocked before callback was set, notify immediately
+    if (callback && this.audioWasBlocked && this.audioContext?.state === 'suspended') {
+      callback()
+    }
+  }
+
+  /**
+   * Notify that audio was blocked (called internally)
+   */
+  private notifyAudioBlocked(): void {
+    this.audioWasBlocked = true
+    if (this.onAudioBlockedCallback) {
+      this.onAudioBlockedCallback()
+    }
   }
 
   /**

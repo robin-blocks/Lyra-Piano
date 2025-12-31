@@ -7,6 +7,7 @@ import { PromptSuggestions, DEFAULT_SUGGESTIONS, type Suggestion } from '@/compo
 import { ParticleCanvas } from '@/components/ParticleCanvas'
 import { usePiano } from '@/hooks/usePiano'
 import { useMidiInput } from '@/hooks/useMidiInput'
+import { useMusicalTyping } from '@/hooks/useMusicalTyping'
 import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
 import { getPianoAudio } from '@/lib/PianoAudio'
 import { DemoPlayer, playCustomSequence, type SequenceNote } from '@/lib/DemoPlayer'
@@ -31,6 +32,7 @@ export function Lyra() {
   const [error, setError] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [midiDropdownOpen, setMidiDropdownOpen] = useState(false)
+  const [showAudioPermission, setShowAudioPermission] = useState(false)
 
   // Prompt suggestions state
   const [suggestions, setSuggestions] = useState<Suggestion[]>(DEFAULT_SUGGESTIONS)
@@ -399,6 +401,24 @@ export function Lyra() {
     }
   }, [error])
 
+  // Set up audio blocked callback
+  useEffect(() => {
+    const pianoAudio = getPianoAudio()
+    pianoAudio.setOnAudioBlocked(() => {
+      setShowAudioPermission(true)
+    })
+    return () => {
+      pianoAudio.setOnAudioBlocked(null)
+    }
+  }, [])
+
+  // Handle enabling audio after user click
+  const handleEnableAudio = useCallback(async () => {
+    const pianoAudio = getPianoAudio()
+    await pianoAudio.initialize()
+    setShowAudioPermission(false)
+  }, [])
+
   // Update orb position for particle effects
   useEffect(() => {
     const updateOrbPosition = () => {
@@ -463,6 +483,34 @@ export function Lyra() {
     autoConnect: true,
   })
 
+  // Musical typing - enable when no MIDI device connected
+  const musicalTypingEnabled = !midiDevice
+  useMusicalTyping({
+    enabled: musicalTypingEnabled,
+    onNoteOn: handleNoteOn,
+    onNoteOff: handleNoteOff,
+  })
+
+  // Play confirmation sound when MIDI device connects
+  const prevMidiDeviceRef = useRef<typeof midiDevice>(null)
+  useEffect(() => {
+    // Check if device just connected (was null, now has value)
+    if (midiDevice && !prevMidiDeviceRef.current) {
+      const pianoAudio = getPianoAudio()
+      pianoAudio.initialize().then(() => {
+        // Play a quick ascending arpeggio as confirmation
+        const notes = [60, 64, 67] // C4, E4, G4 (C major chord)
+        notes.forEach((note, i) => {
+          setTimeout(() => {
+            pianoAudio.playNote(note, 60)
+            setTimeout(() => pianoAudio.stopNote(note), 150)
+          }, i * 80)
+        })
+      })
+    }
+    prevMidiDeviceRef.current = midiDevice
+  }, [midiDevice])
+
   const handleConnect = useCallback(async () => {
     if (!AGENT_ID) {
       setError('Agent ID not configured. Please set NEXT_PUBLIC_ELEVENLABS_AGENT_ID in .env.local')
@@ -477,8 +525,8 @@ export function Lyra() {
       const firstMessage = midiConnected
         ? "Hi! I'm Lyra, your AI piano teacher. What would you like to learn today?"
         : "Hi! I'm Lyra, your AI piano teacher. I notice you don't have a MIDI piano connected. " +
-          "You can click the on-screen keys to play, but for the best experience, " +
-          "connect a MIDI keyboard using the instructions above the piano. " +
+          "You can use your computer keyboard to play, or click the on-screen keys. " +
+          "For the best experience, connect a MIDI keyboard. " +
           "What would you like to learn today?"
 
       await connect({ firstMessage })
@@ -608,6 +656,26 @@ export function Lyra() {
           </div>
         )}
 
+        {/* Audio permission toast - click anywhere to dismiss */}
+        {showAudioPermission && (
+          <div
+            className="fixed inset-0 z-50"
+            onClick={handleEnableAudio}
+          >
+            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-3 bg-lyra-surface border border-lyra-accent/40 rounded-xl shadow-lg cursor-pointer animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="w-8 h-8 rounded-full bg-lyra-orb-1/20 flex items-center justify-center">
+                <svg className="w-4 h-4 text-lyra-orb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 001.414 1.414m2.828-9.9a9 9 0 012.828-2.828" />
+                </svg>
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-medium text-lyra-text">Click to enable audio</p>
+                <p className="text-xs text-lyra-muted">Browser requires interaction to play sound</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Orb */}
         <div ref={orbContainerRef}>
           <LyraOrb
@@ -725,6 +793,7 @@ export function Lyra() {
               onNoteOff={handleNoteOff}
               startNote={48}  // C3
               endNote={72}    // C5 (2 octaves)
+              showKeyboardHints={musicalTypingEnabled}
             />
           </div>
           <div className="hidden md:block">
@@ -736,6 +805,7 @@ export function Lyra() {
               onNoteOff={handleNoteOff}
               startNote={36}  // C2
               endNote={96}    // C7 (5 octaves)
+              showKeyboardHints={musicalTypingEnabled}
             />
           </div>
         </div>
