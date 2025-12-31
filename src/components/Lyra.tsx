@@ -30,6 +30,7 @@ export function Lyra() {
   const [message, setMessage] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [midiDropdownOpen, setMidiDropdownOpen] = useState(false)
 
   // Prompt suggestions state
   const [suggestions, setSuggestions] = useState<Suggestion[]>(DEFAULT_SUGGESTIONS)
@@ -453,6 +454,8 @@ export function Lyra() {
   const {
     connectedDevice: midiDevice,
     isSupported: midiSupported,
+    devices: midiDevices,
+    connectDevice: connectMidiDevice,
   } = useMidiInput({
     onNoteOn: handleNoteOn,
     onNoteOff: handleNoteOff,
@@ -634,6 +637,48 @@ export function Lyra() {
               <>
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                 <span className="text-xs text-lyra-muted">Connected to: {midiDevice.name}</span>
+
+                {/* Dropdown for multiple devices */}
+                {midiDevices.length > 1 && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setMidiDropdownOpen(!midiDropdownOpen)}
+                      onBlur={() => setTimeout(() => setMidiDropdownOpen(false), 150)}
+                      className="p-0.5 hover:bg-lyra-accent/20 rounded transition-colors"
+                    >
+                      <svg
+                        className={`w-3 h-3 text-lyra-muted transition-transform ${midiDropdownOpen ? 'rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {midiDropdownOpen && (
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-56 py-1 bg-lyra-surface border border-lyra-accent/30 rounded-lg shadow-lg z-20">
+                        {midiDevices.map(device => (
+                          <button
+                            key={device.id}
+                            onClick={() => {
+                              connectMidiDevice(device.id)
+                              setMidiDropdownOpen(false)
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left text-lyra-muted hover:text-lyra-text hover:bg-lyra-accent/20 transition-colors"
+                          >
+                            <span className="flex-1 truncate">{device.name}</span>
+                            {device.id === midiDevice.id && (
+                              <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             ) : (
               <div className="relative group">
